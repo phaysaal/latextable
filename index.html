@@ -1,0 +1,1799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LaTeX Table Editor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    padding: 24px;
+    min-height: 100vh;
+  }
+
+  h1 { font-size: 1.5rem; margin-bottom: 16px; font-weight: 600; }
+
+  .layout {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    width: 100%;
+    margin: 0;
+  }
+
+  .panel {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+
+  .panel-latex {
+    width: 360px;
+    min-width: 200px;
+    flex-shrink: 0;
+    transition: opacity 0.2s ease;
+    overflow: hidden;
+  }
+
+  .panel-latex.collapsed {
+    width: 0 !important;
+    min-width: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .panel-grid {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+    max-height: calc(100vh - 120px);
+  }
+
+  .panel-divider {
+    width: 6px;
+    cursor: col-resize;
+    background: transparent;
+    flex-shrink: 0;
+    position: relative;
+    border-radius: 3px;
+    transition: background 0.15s;
+    align-self: stretch;
+  }
+
+  .panel-divider:hover, .panel-divider.active { background: #4a6cf7; opacity: 0.4; }
+  .panel-divider.hidden { display: none; }
+
+  body.resizing-panels { user-select: none; cursor: col-resize; }
+
+  .panel h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #555; }
+
+  textarea {
+    width: 100%;
+    min-height: 260px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 13px;
+    padding: 12px;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    resize: vertical;
+    line-height: 1.5;
+    tab-size: 2;
+  }
+
+  textarea:focus { outline: 2px solid #4a6cf7; border-color: transparent; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.45; cursor: default; }
+
+  .btn-primary { background: #4a6cf7; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #3b5de7; }
+  .btn-success { background: #12b886; color: #fff; }
+  .btn-success:hover:not(:disabled) { background: #0ca678; }
+  .btn-secondary { background: #e9ecef; color: #333; }
+  .btn-secondary:hover:not(:disabled) { background: #dee2e6; }
+  .btn-danger { background: #fa5252; color: #fff; }
+  .btn-danger:hover:not(:disabled) { background: #e03131; }
+  .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+  .btn-warning { background: #fab005; color: #333; }
+  .btn-warning:hover:not(:disabled) { background: #f59f00; }
+
+  .grid-toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .grid-toolbar label { font-size: 0.82rem; color: #666; margin-right: 2px; }
+
+  .grid-toolbar select {
+    padding: 5px 8px;
+    border: 1px solid #d0d5dd;
+    border-radius: 5px;
+    font-size: 0.82rem;
+  }
+
+  .toolbar-sep {
+    width: 1px;
+    height: 22px;
+    background: #dee2e6;
+    margin: 0 2px;
+  }
+
+  table.grid {
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  table.grid th {
+    background: #f1f3f5;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #888;
+    padding: 4px 8px;
+    text-align: center;
+    border: 1px solid #dee2e6;
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+  }
+
+  table.grid th .del-col {
+    position: absolute;
+    top: -14px; left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    font-size: 0.65rem; width: 18px; height: 18px; line-height: 18px;
+    background: #fa5252; color: #fff; border-radius: 50%;
+    cursor: pointer; border: none; padding: 0;
+  }
+
+  table.grid th:hover .del-col { display: block; }
+
+  table.grid th .col-resize-handle {
+    position: absolute; top: 0; right: -3px;
+    width: 6px; height: 100%;
+    cursor: col-resize; z-index: 2;
+  }
+
+  table.grid th .col-resize-handle:hover,
+  table.grid th .col-resize-handle.active { background: #4a6cf7; opacity: 0.5; }
+
+  table.grid td {
+    border: 1px solid #dee2e6;
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  table.grid td.selected {
+    outline: 2px solid #4a6cf7;
+    outline-offset: -2px;
+    background: #edf2ff;
+  }
+
+  table.grid td.merged-cell { background: #f0f7ff; }
+
+  table.grid td input {
+    width: 100%; height: 100%;
+    padding: 7px 8px;
+    border: none;
+    font-size: 0.88rem;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    background: transparent;
+    outline: none;
+  }
+
+  table.grid td.cell-bold input { font-weight: 700; }
+  table.grid td.cell-italic input { font-style: italic; }
+  table.grid td.cell-underline input { text-decoration: underline; }
+  table.grid td.cell-strike input { text-decoration: line-through; }
+  table.grid td.cell-underline.cell-strike input { text-decoration: underline line-through; }
+  table.grid td.cell-center input { text-align: center; }
+  table.grid td.cell-right input { text-align: right; }
+  table.grid td.cell-tt input { font-family: 'SFMono-Regular', Consolas, monospace; background: #f5f5f5; }
+  table.grid td.cell-sc input { font-variant: small-caps; }
+
+  .fmt-btn {
+    width: 28px; height: 28px;
+    padding: 0;
+    font-size: 0.82rem;
+    font-family: 'Georgia', serif;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: #e9ecef;
+    border: none;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .fmt-btn:hover { background: #dee2e6; }
+  .fmt-btn .lbl-b { font-weight: 800; }
+  .fmt-btn .lbl-i { font-style: italic; }
+  .fmt-btn .lbl-u { text-decoration: underline; }
+  .fmt-btn .lbl-s { text-decoration: line-through; }
+  .fmt-btn .lbl-tt { font-family: monospace; font-size: 0.75rem; }
+  .fmt-btn .lbl-sc { font-variant: small-caps; font-size: 0.72rem; }
+
+  .color-pick {
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+    margin: 0;
+  }
+
+  .color-pick input[type="color"] {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .color-swatch {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 0.85rem;
+    font-weight: 700;
+    font-family: serif;
+    user-select: none;
+  }
+
+  .bg-swatch { font-size: 1rem; color: #666; }
+
+  table.grid td input:focus {
+    background: #edf2ff;
+    outline: 2px solid #4a6cf7;
+    outline-offset: -2px;
+    border-radius: 2px;
+  }
+
+  table.grid .row-num {
+    background: #f1f3f5;
+    text-align: center;
+    font-size: 0.75rem; font-weight: 600; color: #888;
+    width: 36px; min-width: 36px;
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+  }
+
+  table.grid .row-num .row-resize-handle {
+    position: absolute; bottom: -3px; left: 0;
+    width: 100%; height: 6px;
+    cursor: row-resize; z-index: 2;
+  }
+
+  table.grid .row-num .row-resize-handle:hover,
+  table.grid .row-num .row-resize-handle.active { background: #4a6cf7; opacity: 0.5; }
+
+  table.grid .row-num .del-row {
+    position: absolute; left: -16px; top: 50%;
+    transform: translateY(-50%);
+    display: none;
+    font-size: 0.65rem; width: 18px; height: 18px; line-height: 18px;
+    background: #fa5252; color: #fff; border-radius: 50%;
+    cursor: pointer; border: none; padding: 0;
+  }
+
+  table.grid .row-num:hover .del-row { display: block; }
+
+  table.grid .row-num .hline-cb {
+    display: block;
+    margin: 2px auto 0;
+    cursor: pointer;
+    width: 12px;
+    height: 12px;
+    accent-color: #4a6cf7;
+  }
+
+  table.grid .hline-top-cb {
+    cursor: pointer;
+    width: 12px;
+    height: 12px;
+    accent-color: #4a6cf7;
+  }
+
+  /* Visual hline borders */
+  table.grid tr.hline-after td,
+  table.grid tr.hline-after .row-num {
+    border-bottom: 2.5px solid #333;
+  }
+
+  table.grid thead tr.hline-top th {
+    border-top: 2.5px solid #333;
+  }
+
+  body.resizing { user-select: none; cursor: col-resize; }
+  body.resizing-row { user-select: none; cursor: row-resize; }
+  body.selecting { user-select: none; }
+
+  .th-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .th-label { font-size: 0.75rem; }
+
+  .th-align {
+    font-size: 0.65rem;
+    padding: 0 2px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    background: #fff;
+    cursor: pointer;
+    color: #666;
+  }
+
+  .th-width {
+    font-size: 0.6rem;
+    width: 38px;
+    padding: 1px 2px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    text-align: center;
+    color: #666;
+  }
+
+  .status { margin-top: 8px; font-size: 0.8rem; color: #12b886; min-height: 1.2em; }
+
+  .options-row { display: flex; gap: 16px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .options-row label { font-size: 0.82rem; color: #555; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .options-row input[type="checkbox"] { cursor: pointer; }
+
+  .merge-info { font-size: 0.78rem; color: #666; margin-left: 4px; }
+
+  .ctx-menu {
+    position: fixed;
+    background: #fff;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    padding: 4px 0;
+    z-index: 1000;
+    min-width: 180px;
+  }
+
+  .ctx-menu div {
+    padding: 7px 16px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ctx-menu div:hover { background: #edf2ff; }
+  .ctx-menu div .shortcut { margin-left: auto; color: #aaa; font-size: 0.72rem; }
+
+  .ctx-menu .sep {
+    height: 1px;
+    background: #e9ecef;
+    margin: 4px 0;
+    padding: 0;
+    cursor: default;
+  }
+
+  .ctx-menu .sep:hover { background: #e9ecef; }
+
+  .saved-badge {
+    font-size: 0.72rem;
+    color: #12b886;
+    margin-left: 8px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .saved-badge.show { opacity: 1; }
+
+  /* Alternating row shading */
+  table.grid.alt-shading tbody tr:nth-child(even) td:not(.row-num) {
+    background: #f8f9fb;
+  }
+  table.grid.alt-shading tbody tr:nth-child(even) td.selected {
+    background: #edf2ff;
+  }
+  table.grid.alt-shading tbody tr:nth-child(even) td.merged-cell {
+    background: #eef4ff;
+  }
+
+  @media (max-width: 800px) {
+    .layout { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div style="display:flex; align-items:center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+  <h1 style="margin-bottom:0">LaTeX Table Editor</h1>
+  <button class="btn-secondary btn-sm" id="toggleLatexBtn" onclick="toggleLatexPanel()" title="Toggle LaTeX panel">Hide LaTeX Panel</button>
+  <button class="btn-secondary btn-sm" id="undoBtn" onclick="undo()" disabled title="Undo (Ctrl+Z)">Undo</button>
+  <button class="btn-secondary btn-sm" id="redoBtn" onclick="redo()" disabled title="Redo (Ctrl+Shift+Z)">Redo</button>
+  <span id="savedBadge" class="saved-badge">Auto-saved</span>
+</div>
+
+<div class="layout">
+  <div class="panel panel-latex" id="latexPanel">
+    <h2>LaTeX Code</h2>
+    <textarea id="latexInput" spellcheck="false" placeholder="Paste your LaTeX table here, e.g.:
+\begin{tabular}{|l|c|r|}
+\hline
+Name & Age & Score \\
+\hline
+Alice & 25 & 95.5 \\
+Bob & 30 & 88.0 \\
+\hline
+\end{tabular}"></textarea>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="importLatex()">Import to Grid</button>
+      <button class="btn-success" onclick="exportLatex()">Export from Grid</button>
+      <button class="btn-secondary" onclick="copyLatex()">Copy to Clipboard</button>
+    </div>
+    <div class="options-row" style="margin-top: 12px;">
+      <label><input type="checkbox" id="optHlines" checked onchange="toggleAllHlines(this.checked)"> All \hline</label>
+      <label><input type="checkbox" id="optBooktabs"> booktabs</label>
+      <label><input type="checkbox" id="optBorders"> Borders (|)</label>
+      <label><input type="checkbox" id="optBoldHeader" checked onchange="renderGrid();autoSave()"> Bold header row</label>
+      <label><input type="checkbox" id="optAltShading" onchange="toggleAltShading()"> Alt row shading</label>
+      <label>
+        Env:
+        <select id="optEnv">
+          <option value="tabular">tabular</option>
+          <option value="tabular*">tabular*</option>
+          <option value="longtable">longtable</option>
+          <option value="array">array</option>
+        </select>
+      </label>
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn-secondary btn-sm" onclick="importCSV()">Import CSV</button>
+      <button class="btn-secondary btn-sm" onclick="exportCSV()">Export CSV</button>
+    </div>
+    <div id="status" class="status"></div>
+  </div>
+
+  <div class="panel-divider" id="panelDivider" onmousedown="startPanelResize(event)"></div>
+
+  <div class="panel panel-grid">
+    <h2>Table Grid</h2>
+    <div class="grid-toolbar">
+      <button class="btn-secondary btn-sm" onclick="addRow()">+ Row</button>
+      <button class="btn-secondary btn-sm" onclick="addCol()">+ Column</button>
+      <span class="toolbar-sep"></span>
+      <button class="btn-warning btn-sm" id="mergeBtn" onclick="mergeSelected()" disabled title="Select cells first, then merge">Merge Cells</button>
+      <button class="btn-secondary btn-sm" id="unmergeBtn" onclick="unmergeSelected()" disabled title="Select a merged cell to unmerge">Unmerge</button>
+      <span id="mergeInfo" class="merge-info">Ctrl+drag or Shift+click to select</span>
+      <span class="toolbar-sep"></span>
+      <button class="fmt-btn" onclick="toggleFormat('textbf')" title="Bold (\\textbf)"><span class="lbl-b">B</span></button>
+      <button class="fmt-btn" onclick="toggleFormat('textit')" title="Italic (\\textit)"><span class="lbl-i">I</span></button>
+      <button class="fmt-btn" onclick="toggleFormat('underline')" title="Underline (\\underline)"><span class="lbl-u">U</span></button>
+      <button class="fmt-btn" onclick="toggleFormat('sout')" title="Strikethrough (\\sout)"><span class="lbl-s">S</span></button>
+      <button class="fmt-btn" onclick="toggleFormat('texttt')" title="Monospace (\\texttt)"><span class="lbl-tt">TT</span></button>
+      <button class="fmt-btn" onclick="toggleFormat('textsc')" title="Small caps (\\textsc)"><span class="lbl-sc">Sc</span></button>
+      <span class="toolbar-sep"></span>
+      <label class="color-pick" title="Text color (\\textcolor)">
+        <span class="color-swatch" id="fgSwatch" style="background:#000000;color:#fff;">A</span>
+        <input type="color" id="fgColorInput" value="#000000" onchange="applyFgColor(this.value)">
+      </label>
+      <label class="color-pick" title="Cell background (\\cellcolor)">
+        <span class="color-swatch bg-swatch" id="bgSwatch" style="background:#ffffff;">&#9638;</span>
+        <input type="color" id="bgColorInput" value="#ffffff" onchange="applyBgColor(this.value)">
+      </label>
+      <button class="fmt-btn" onclick="clearCellColors()" title="Clear colors" style="font-size:0.7rem;">&#8416;</button>
+      <span class="toolbar-sep"></span>
+      <button class="btn-danger btn-sm" onclick="clearGrid()">Clear All</button>
+      <span style="flex:1"></span>
+      <label>Rows:</label>
+      <select id="rowCount" onchange="resizeGrid()">
+        <script>for(let i=1;i<=30;i++) document.write(`<option value="${i}" ${i===3?'selected':''}>${i}</option>`)</script>
+      </select>
+      <label>Cols:</label>
+      <select id="colCount" onchange="resizeGrid()">
+        <script>for(let i=1;i<=20;i++) document.write(`<option value="${i}" ${i===3?'selected':''}>${i}</option>`)</script>
+      </select>
+    </div>
+    <div style="overflow:auto; margin-top:8px; padding-top:16px; padding-left: 20px;">
+      <table class="grid" id="gridTable"></table>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden file input for CSV import -->
+<input type="file" id="csvFileInput" accept=".csv,.tsv,.txt" style="display:none" onchange="handleCSVFile(event)">
+
+<script>
+let gridData = [];
+let colAligns = [];    // 'l','c','r','p','m','b'
+let colWidthSpecs = []; // width strings for p/m/b, e.g. '2cm', '3in'
+let colWidths = [];
+let rowHeights = [];
+let merges = [];
+// rowHlines[i] = true means a horizontal line AFTER row i.
+let topHline = true;
+let rowHlines = [];
+// Cell colors: { "r,c": { fg: "#hex"|null, bg: "#hex"|null } }
+let cellColors = {}; // length = number of rows
+const DEFAULT_COL_WIDTH = 120;
+const DEFAULT_ROW_HEIGHT = 34;
+const MIN_COL_WIDTH = 50;
+const MIN_ROW_HEIGHT = 26;
+const colLetters = 'ABCDEFGHIJKLMNOPQRST';
+
+// --- SELECTION STATE ---
+let selection = null;
+let selAnchor = null;
+let isDragging = false;
+
+// --- UNDO / REDO ---
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 50;
+
+function captureState() {
+  return {
+    gridData: gridData.map(r => [...r]),
+    colAligns: [...colAligns],
+    colWidthSpecs: [...colWidthSpecs],
+    colWidths: [...colWidths],
+    rowHeights: [...rowHeights],
+    merges: merges.map(m => ({...m})),
+    topHline,
+    rowHlines: [...rowHlines],
+    cellColors: JSON.parse(JSON.stringify(cellColors))
+  };
+}
+
+function restoreState(state) {
+  gridData = state.gridData.map(r => [...r]);
+  colAligns = [...state.colAligns];
+  colWidthSpecs = state.colWidthSpecs ? [...state.colWidthSpecs] : Array(colAligns.length).fill('2cm');
+  colWidths = [...state.colWidths];
+  rowHeights = [...state.rowHeights];
+  merges = state.merges.map(m => ({...m}));
+  topHline = state.topHline !== undefined ? state.topHline : true;
+  rowHlines = state.rowHlines ? [...state.rowHlines] : Array(gridData.length).fill(true);
+  cellColors = state.cellColors ? JSON.parse(JSON.stringify(state.cellColors)) : {};
+  document.getElementById('rowCount').value = gridData.length;
+  document.getElementById('colCount').value = gridData.length > 0 ? gridData[0].length : 0;
+  selection = null;
+  renderGrid();
+  renderAlignRow();
+}
+
+function pushUndo() {
+  undoStack.push(captureState());
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack.length = 0;
+  updateUndoButtons();
+  autoSave();
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(captureState());
+  restoreState(undoStack.pop());
+  updateUndoButtons();
+  autoSave();
+}
+
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(captureState());
+  restoreState(redoStack.pop());
+  updateUndoButtons();
+  autoSave();
+}
+
+function updateUndoButtons() {
+  document.getElementById('undoBtn').disabled = !undoStack.length;
+  document.getElementById('redoBtn').disabled = !redoStack.length;
+}
+
+// --- AUTO-SAVE ---
+const SAVE_KEY = 'latextable_autosave';
+let saveTimer = null;
+
+function autoSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    const state = captureState();
+    state.latexText = document.getElementById('latexInput').value;
+    state.topHline = topHline;
+    state.rowHlines = [...rowHlines];
+    state.cellColors = JSON.parse(JSON.stringify(cellColors));
+    state.options = {
+      hlines: document.getElementById('optHlines').checked,
+      booktabs: document.getElementById('optBooktabs').checked,
+      borders: document.getElementById('optBorders').checked,
+      boldHeader: document.getElementById('optBoldHeader').checked,
+      altShading: document.getElementById('optAltShading').checked,
+      env: document.getElementById('optEnv').value
+    };
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      const badge = document.getElementById('savedBadge');
+      badge.classList.add('show');
+      setTimeout(() => badge.classList.remove('show'), 1500);
+    } catch(e) {}
+  }, 500);
+}
+
+function loadAutoSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const state = JSON.parse(raw);
+    if (!state.gridData || !state.gridData.length) return false;
+    gridData = state.gridData;
+    colAligns = state.colAligns || Array(gridData[0].length).fill('l');
+    colWidthSpecs = state.colWidthSpecs || Array(gridData[0].length).fill('2cm');
+    colWidths = state.colWidths || Array(gridData[0].length).fill(DEFAULT_COL_WIDTH);
+    rowHeights = state.rowHeights || Array(gridData.length).fill(DEFAULT_ROW_HEIGHT);
+    merges = state.merges || [];
+    topHline = state.topHline !== undefined ? state.topHline : true;
+    rowHlines = state.rowHlines || Array(gridData.length).fill(true);
+    cellColors = state.cellColors || {};
+    if (state.latexText) document.getElementById('latexInput').value = state.latexText;
+    if (state.options) {
+      document.getElementById('optHlines').checked = !!state.options.hlines;
+      document.getElementById('optBooktabs').checked = !!state.options.booktabs;
+      document.getElementById('optBorders').checked = !!state.options.borders;
+      document.getElementById('optBoldHeader').checked = state.options.boldHeader !== undefined ? !!state.options.boldHeader : true;
+      document.getElementById('optAltShading').checked = !!state.options.altShading;
+      if (state.options.env) document.getElementById('optEnv').value = state.options.env;
+    }
+    document.getElementById('rowCount').value = gridData.length;
+    document.getElementById('colCount').value = gridData[0].length;
+    renderGrid();
+    toggleAltShading();
+    renderAlignRow();
+    return true;
+  } catch(e) { return false; }
+}
+
+// --- GRID ---
+function initGrid(rows, cols, data) {
+  const r = rows || parseInt(document.getElementById('rowCount').value);
+  const c = cols || parseInt(document.getElementById('colCount').value);
+  gridData = [];
+  for (let i = 0; i < r; i++) {
+    const row = [];
+    for (let j = 0; j < c; j++) {
+      row.push(data && data[i] && data[i][j] != null ? data[i][j] : '');
+    }
+    gridData.push(row);
+  }
+  if (!colAligns.length || colAligns.length !== c) colAligns = Array(c).fill('l');
+  if (!colWidthSpecs.length || colWidthSpecs.length !== c) colWidthSpecs = Array(c).fill('2cm');
+  document.getElementById('rowCount').value = r;
+  document.getElementById('colCount').value = c;
+  renderGrid();
+  renderAlignRow();
+}
+
+function ensureSizeArrays() {
+  const rows = gridData.length;
+  const cols = rows > 0 ? gridData[0].length : 0;
+  while (colWidths.length < cols) colWidths.push(DEFAULT_COL_WIDTH);
+  colWidths.length = cols;
+  while (colWidthSpecs.length < cols) colWidthSpecs.push('2cm');
+  colWidthSpecs.length = cols;
+  while (rowHeights.length < rows) rowHeights.push(DEFAULT_ROW_HEIGHT);
+  rowHeights.length = rows;
+  while (rowHlines.length < rows) rowHlines.push(true);
+  rowHlines.length = rows;
+}
+
+function getMergeAt(r, c) {
+  for (const m of merges) {
+    if (r >= m.r && r < m.r + m.rowspan && c >= m.c && c < m.c + m.colspan) return m;
+  }
+  return null;
+}
+
+function isHiddenByMerge(r, c) {
+  const m = getMergeAt(r, c);
+  return m && !(m.r === r && m.c === c);
+}
+
+function renderGrid() {
+  const table = document.getElementById('gridTable');
+  const rows = gridData.length;
+  const cols = rows > 0 ? gridData[0].length : 0;
+  ensureSizeArrays();
+
+  let html = '<colgroup><col style="width:36px">';
+  for (let j = 0; j < cols; j++) html += `<col style="width:${colWidths[j]}px">`;
+  html += '</colgroup>';
+
+  const topClass = topHline ? ' class="hline-top"' : '';
+  html += `<thead><tr${topClass}><th><input type="checkbox" class="hline-top-cb" title="Top border" ${topHline?'checked':''} onchange="topHline=this.checked;renderGrid();autoSave()"></th>`;
+  for (let j = 0; j < cols; j++) {
+    const alOpts = ['l','c','r','p','m','b'].map(a => {
+      const labels = {l:'L',c:'C',r:'R',p:'p{}',m:'m{}',b:'b{}'};
+      return `<option value="${a}" ${colAligns[j]===a?'selected':''}>${labels[a]}</option>`;
+    }).join('');
+    const isPmb = 'pmb'.includes(colAligns[j]);
+    const widthInput = isPmb ? `<input class="th-width" value="${escHtml(colWidthSpecs[j])}" title="Column width" onchange="colWidthSpecs[${j}]=this.value;autoSave()" onclick="event.stopPropagation()">` : '';
+    html += `<th oncontextmenu="showColCtx(event, ${j})"><div class="th-inner"><span class="th-label">${colLetters[j] || j+1}</span><select class="th-align" onchange="colAligns[${j}]=this.value;renderGrid();autoSave()" title="Alignment">${alOpts}</select>${widthInput}</div><button class="del-col" title="Delete column" onclick="pushUndo();delCol(${j})">&#215;</button><div class="col-resize-handle" data-col="${j}" onmousedown="startColResize(event, ${j})"></div></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (let i = 0; i < rows; i++) {
+    const rowClass = rowHlines[i] ? ' hline-after' : '';
+    html += `<tr style="height:${rowHeights[i]}px" class="${rowClass.trim()}">`;
+    html += `<td class="row-num" oncontextmenu="showRowCtx(event, ${i})">${i+1}<input type="checkbox" class="hline-cb" title="Border after row ${i+1}" ${rowHlines[i]?'checked':''} onchange="rowHlines[${i}]=this.checked;renderGrid();autoSave()"><button class="del-row" title="Delete row" onclick="pushUndo();delRow(${i})">&#215;</button><div class="row-resize-handle" data-row="${i}" onmousedown="startRowResize(event, ${i})"></div></td>`;
+    const isBoldRow = document.getElementById('optBoldHeader').checked && i === 0;
+    for (let j = 0; j < cols; j++) {
+      if (isHiddenByMerge(i, j)) continue;
+      const m = getMergeAt(i, j);
+      let attrs = '', classes = '';
+      if (m && m.r === i && m.c === j) {
+        if (m.colspan > 1) attrs += ` colspan="${m.colspan}"`;
+        if (m.rowspan > 1) attrs += ` rowspan="${m.rowspan}"`;
+        classes += ' merged-cell';
+        if (m.colspan > 1) classes += ' cell-center';
+      }
+      if (isBoldRow) classes += ' cell-bold';
+      // Apply column alignment visually
+      const align = colAligns[j];
+      if (align === 'c') classes += ' cell-center';
+      else if (align === 'r') classes += ' cell-right';
+      // Detect LaTeX formatting in cell content
+      classes += detectCellFormat(gridData[i][j]);
+      const isSelected = selection && i >= selection.r1 && i <= selection.r2 && j >= selection.c1 && j <= selection.c2;
+      if (isSelected) classes += ' selected';
+      // Cell colors
+      const cc = cellColors[`${i},${j}`];
+      let cellStyle = '';
+      if (cc) {
+        if (cc.bg) cellStyle += `background:${cc.bg};`;
+        if (cc.fg) cellStyle += `--cell-fg:${cc.fg};`;
+      }
+      const styleAttr = cellStyle ? ` style="${cellStyle}"` : '';
+      html += `<td${attrs} class="${classes.trim()}"${styleAttr} data-r="${i}" data-c="${j}"><input value="${escHtml(gridData[i][j])}" data-r="${i}" data-c="${j}" oninput="cellInput(this)" onkeydown="cellNav(event, this)" onmousedown="cellMouseDown(event, ${i}, ${j})" onfocus="cellFocus(${i}, ${j})"${cc && cc.fg ? ` style="color:${cc.fg}"` : ''}></td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody>';
+  table.innerHTML = html;
+  updateMergeButtons();
+}
+
+function renderAlignRow() { /* alignment now in column headers */ }
+
+function toggleAllHlines(on) {
+  topHline = on;
+  for (let i = 0; i < rowHlines.length; i++) rowHlines[i] = on;
+  renderGrid();
+  autoSave();
+}
+
+function toggleAltShading() {
+  const table = document.getElementById('gridTable');
+  if (document.getElementById('optAltShading').checked) table.classList.add('alt-shading');
+  else table.classList.remove('alt-shading');
+  autoSave();
+}
+
+// --- CELL FORMATTING ---
+// Toggle a LaTeX formatting command on selected cells or focused cell
+function toggleFormat(cmd) {
+  const cells = getTargetCells();
+  if (!cells.length) return;
+
+  pushUndo();
+  const wrapRe = new RegExp(`^\\\\${cmd}\\{(.*)\\}$`);
+
+  // Check if ALL cells already have this format — if so, unwrap (toggle off)
+  const allWrapped = cells.every(({r, c}) => wrapRe.test(gridData[r][c].trim()));
+
+  cells.forEach(({r, c}) => {
+    const val = gridData[r][c].trim();
+    if (allWrapped) {
+      // Unwrap
+      const m = val.match(wrapRe);
+      gridData[r][c] = m ? m[1] : val;
+    } else {
+      // Wrap (don't double-wrap)
+      if (!wrapRe.test(val)) {
+        gridData[r][c] = `\\${cmd}{${val}}`;
+      }
+    }
+  });
+  renderGrid();
+  autoSave();
+}
+
+// Detect LaTeX formatting in cell content and return CSS classes
+function detectCellFormat(content) {
+  let classes = '';
+  let s = content;
+  // Peel layers — a cell could have \textbf{\textit{...}}
+  const checks = [
+    { re: /^\\textbf\{(.*)\}$/, cls: 'cell-bold' },
+    { re: /^\\textit\{(.*)\}$/, cls: 'cell-italic' },
+    { re: /^\\emph\{(.*)\}$/, cls: 'cell-italic' },
+    { re: /^\\underline\{(.*)\}$/, cls: 'cell-underline' },
+    { re: /^\\sout\{(.*)\}$/, cls: 'cell-strike' },
+    { re: /^\\texttt\{(.*)\}$/, cls: 'cell-tt' },
+    { re: /^\\textsc\{(.*)\}$/, cls: 'cell-sc' },
+  ];
+  // Check up to 4 levels of nesting
+  for (let depth = 0; depth < 4; depth++) {
+    let matched = false;
+    for (const {re, cls} of checks) {
+      const m = s.match(re);
+      if (m) {
+        if (!classes.includes(cls)) classes += ' ' + cls;
+        s = m[1];
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) break;
+  }
+  return classes;
+}
+
+// --- CELL COLORS ---
+function getTargetCells() {
+  const cells = [];
+  if (selection) {
+    for (let i = selection.r1; i <= selection.r2; i++)
+      for (let j = selection.c1; j <= selection.c2; j++)
+        if (!isHiddenByMerge(i, j)) cells.push({r: i, c: j});
+  } else if (selAnchor) {
+    cells.push({r: selAnchor.r, c: selAnchor.c});
+  } else {
+    const active = document.activeElement;
+    if (active && active.tagName === 'INPUT' && active.dataset.r != null)
+      cells.push({r: +active.dataset.r, c: +active.dataset.c});
+  }
+  return cells;
+}
+
+function applyFgColor(color) {
+  const cells = getTargetCells();
+  if (!cells.length) return;
+  pushUndo();
+  cells.forEach(({r, c}) => {
+    const key = `${r},${c}`;
+    if (!cellColors[key]) cellColors[key] = {};
+    cellColors[key].fg = (color === '#000000') ? null : color;
+    if (!cellColors[key].fg && !cellColors[key].bg) delete cellColors[key];
+  });
+  // Update swatch
+  document.getElementById('fgSwatch').style.background = color;
+  document.getElementById('fgSwatch').style.color = luminance(color) < 0.5 ? '#fff' : '#000';
+  renderGrid();
+  autoSave();
+}
+
+function applyBgColor(color) {
+  const cells = getTargetCells();
+  if (!cells.length) return;
+  pushUndo();
+  cells.forEach(({r, c}) => {
+    const key = `${r},${c}`;
+    if (!cellColors[key]) cellColors[key] = {};
+    cellColors[key].bg = (color === '#ffffff') ? null : color;
+    if (!cellColors[key].fg && !cellColors[key].bg) delete cellColors[key];
+  });
+  document.getElementById('bgSwatch').style.background = color;
+  renderGrid();
+  autoSave();
+}
+
+function clearCellColors() {
+  const cells = getTargetCells();
+  if (!cells.length) return;
+  pushUndo();
+  cells.forEach(({r, c}) => { delete cellColors[`${r},${c}`]; });
+  renderGrid();
+  autoSave();
+}
+
+// Relative luminance for contrast
+function luminance(hex) {
+  const r = parseInt(hex.slice(1,3), 16) / 255;
+  const g = parseInt(hex.slice(3,5), 16) / 255;
+  const b = parseInt(hex.slice(5,7), 16) / 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+// Convert hex to LaTeX xcolor {rgb}{r,g,b}
+function hexToLatexRgb(hex) {
+  const r = (parseInt(hex.slice(1,3), 16) / 255).toFixed(3);
+  const g = (parseInt(hex.slice(3,5), 16) / 255).toFixed(3);
+  const b = (parseInt(hex.slice(5,7), 16) / 255).toFixed(3);
+  return `{rgb}{${r},${g},${b}}`;
+}
+
+// Update swatch when cell is focused
+function updateColorSwatches(r, c) {
+  const cc = cellColors[`${r},${c}`];
+  const fg = (cc && cc.fg) || '#000000';
+  const bg = (cc && cc.bg) || '#ffffff';
+  document.getElementById('fgColorInput').value = fg;
+  document.getElementById('fgSwatch').style.background = fg;
+  document.getElementById('fgSwatch').style.color = luminance(fg) < 0.5 ? '#fff' : '#000';
+  document.getElementById('bgColorInput').value = bg;
+  document.getElementById('bgSwatch').style.background = bg;
+}
+
+// --- SELECTION ---
+function cellMouseDown(e, r, c) {
+  const isCtrl = e.ctrlKey || e.metaKey;
+  if (e.shiftKey && selAnchor) {
+    e.preventDefault();
+    setSelection(selAnchor.r, selAnchor.c, r, c);
+    renderGrid();
+    focusCell(selAnchor.r, selAnchor.c);
+    return;
+  }
+  if (isCtrl) {
+    e.preventDefault();
+    selAnchor = {r, c};
+    isDragging = true;
+    document.body.classList.add('selecting');
+    setSelection(r, c, r, c);
+    applySelectionStyles();
+    return;
+  }
+  selAnchor = {r, c};
+  if (selection) {
+    selection = null;
+    applySelectionStyles();
+    updateMergeButtons();
+  }
+}
+
+function cellFocus(r, c) {
+  selAnchor = {r, c};
+  updateColorSwatches(r, c);
+}
+
+document.addEventListener('mousemove', function(e) {
+  if (!isDragging || !selAnchor) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el) return;
+  const target = el.closest('input[data-r]') || el.closest('td[data-r]');
+  if (!target) return;
+  const r = +target.dataset.r, c = +target.dataset.c;
+  if (isNaN(r) || isNaN(c)) return;
+  const oldSel = selection ? `${selection.r1},${selection.c1},${selection.r2},${selection.c2}` : '';
+  setSelection(selAnchor.r, selAnchor.c, r, c);
+  const newSel = `${selection.r1},${selection.c1},${selection.r2},${selection.c2}`;
+  if (oldSel !== newSel) applySelectionStyles();
+});
+
+document.addEventListener('mouseup', function() {
+  if (isDragging) {
+    isDragging = false;
+    document.body.classList.remove('selecting');
+    updateMergeButtons();
+  }
+});
+
+function applySelectionStyles() {
+  const table = document.getElementById('gridTable');
+  table.querySelectorAll('td.selected').forEach(td => td.classList.remove('selected'));
+  if (!selection) return;
+  table.querySelectorAll('td[data-r]').forEach(td => {
+    const r = +td.dataset.r, c = +td.dataset.c;
+    if (r >= selection.r1 && r <= selection.r2 && c >= selection.c1 && c <= selection.c2) td.classList.add('selected');
+  });
+  updateMergeButtons();
+}
+
+function focusCell(r, c) {
+  const input = document.querySelector(`#gridTable input[data-r="${r}"][data-c="${c}"]`);
+  if (input) input.focus();
+}
+
+function setSelection(r1, c1, r2, c2) {
+  selection = { r1: Math.min(r1, r2), c1: Math.min(c1, c2), r2: Math.max(r1, r2), c2: Math.max(c1, c2) };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const m of merges) {
+      const mr2 = m.r + m.rowspan - 1, mc2 = m.c + m.colspan - 1;
+      if (m.r <= selection.r2 && mr2 >= selection.r1 && m.c <= selection.c2 && mc2 >= selection.c1) {
+        if (m.r < selection.r1) { selection.r1 = m.r; changed = true; }
+        if (mr2 > selection.r2) { selection.r2 = mr2; changed = true; }
+        if (m.c < selection.c1) { selection.c1 = m.c; changed = true; }
+        if (mc2 > selection.c2) { selection.c2 = mc2; changed = true; }
+      }
+    }
+  }
+}
+
+function updateMergeButtons() {
+  const mergeBtn = document.getElementById('mergeBtn');
+  const unmergeBtn = document.getElementById('unmergeBtn');
+  const info = document.getElementById('mergeInfo');
+  if (!selection || (selection.r1 === selection.r2 && selection.c1 === selection.c2)) {
+    mergeBtn.disabled = true;
+    if (selection) {
+      const m = getMergeAt(selection.r1, selection.c1);
+      if (m && m.r === selection.r1 && m.c === selection.c1) {
+        unmergeBtn.disabled = false;
+        info.textContent = `Merged: ${m.rowspan}\u00d7${m.colspan}`;
+        return;
+      }
+    }
+    unmergeBtn.disabled = true;
+    info.textContent = '';
+    return;
+  }
+  const spanR = selection.r2 - selection.r1 + 1, spanC = selection.c2 - selection.c1 + 1;
+  info.textContent = `Selected: ${spanR}\u00d7${spanC}`;
+  const m = getMergeAt(selection.r1, selection.c1);
+  if (m && m.r === selection.r1 && m.c === selection.c1 && m.rowspan === spanR && m.colspan === spanC) {
+    mergeBtn.disabled = true;
+    unmergeBtn.disabled = false;
+    info.textContent += ' (merged)';
+  } else {
+    mergeBtn.disabled = false;
+    const hasInner = merges.some(m => m.r >= selection.r1 && m.r + m.rowspan - 1 <= selection.r2 && m.c >= selection.c1 && m.c + m.colspan - 1 <= selection.c2);
+    unmergeBtn.disabled = !hasInner;
+  }
+}
+
+// --- MERGE / UNMERGE ---
+function mergeSelected() {
+  if (!selection) return;
+  const {r1, c1, r2, c2} = selection;
+  if (r1 === r2 && c1 === c2) return;
+  pushUndo();
+  merges = merges.filter(m => {
+    const mr2 = m.r + m.rowspan - 1, mc2 = m.c + m.colspan - 1;
+    return !(m.r >= r1 && mr2 <= r2 && m.c >= c1 && mc2 <= c2);
+  });
+  for (let i = r1; i <= r2; i++)
+    for (let j = c1; j <= c2; j++)
+      if (!(i === r1 && j === c1)) gridData[i][j] = '';
+  merges.push({r: r1, c: c1, rowspan: r2 - r1 + 1, colspan: c2 - c1 + 1});
+  renderGrid();
+  showStatus(`Merged ${r2-r1+1}\u00d7${c2-c1+1} cells.`);
+}
+
+function unmergeSelected() {
+  if (!selection) return;
+  pushUndo();
+  const {r1, c1, r2, c2} = selection;
+  const before = merges.length;
+  merges = merges.filter(m => {
+    const mr2 = m.r + m.rowspan - 1, mc2 = m.c + m.colspan - 1;
+    return !(m.r <= r2 && mr2 >= r1 && m.c <= c2 && mc2 >= c1);
+  });
+  if (merges.length < before) { renderGrid(); showStatus('Cells unmerged.'); }
+}
+
+// --- CELL INPUT with undo on blur ---
+let cellUndoPushed = false;
+
+function cellInput(el) {
+  if (!cellUndoPushed) {
+    pushUndo();
+    cellUndoPushed = true;
+  }
+  const r = +el.dataset.r, c = +el.dataset.c;
+  gridData[r][c] = el.value;
+  autoSave();
+}
+
+// Reset the flag when a cell gains focus (new editing session)
+document.addEventListener('focusin', function(e) {
+  if (e.target.tagName === 'INPUT' && e.target.dataset.r != null) {
+    cellUndoPushed = false;
+  }
+});
+
+function cellNav(e, el) {
+  const r = +el.dataset.r, c = +el.dataset.c;
+  const rows = gridData.length, cols = gridData[0].length;
+  let nr = r, nc = c;
+  const pos = el.selectionStart, len = el.value.length;
+
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    if (e.shiftKey) { nc--; if (nc < 0) { nc = cols - 1; nr--; } }
+    else { nc++; if (nc >= cols) { nc = 0; nr++; } }
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (e.shiftKey) nr--; else nr++;
+  } else if (e.key === 'ArrowUp') {
+    nr--;
+  } else if (e.key === 'ArrowDown') {
+    nr++;
+  } else if (e.key === 'ArrowLeft') {
+    // Only navigate to prev cell if cursor is at start (or input empty)
+    if (pos === 0 || len === 0) nc--;
+    else return; // let browser handle cursor movement within input
+  } else if (e.key === 'ArrowRight') {
+    // Only navigate to next cell if cursor is at end (or input empty)
+    if (pos === len || len === 0) nc++;
+    else return;
+  } else return;
+
+  if (nr === r && nc === c) return; // no movement
+  if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+    e.preventDefault();
+    if (isHiddenByMerge(nr, nc)) { const m = getMergeAt(nr, nc); if (m) { nr = m.r; nc = m.c; } }
+    focusCell(nr, nc);
+  }
+}
+
+// --- ROW / COL OPERATIONS ---
+function addRow() { pushUndo(); const cols = gridData.length > 0 ? gridData[0].length : parseInt(document.getElementById('colCount').value); gridData.push(Array(cols).fill('')); document.getElementById('rowCount').value = gridData.length; renderGrid(); }
+function addCol() { pushUndo(); if (gridData.length === 0) { gridData.push(['']); colAligns.push('l'); colWidthSpecs.push('2cm'); } else { gridData.forEach(row => row.push('')); colAligns.push('l'); colWidthSpecs.push('2cm'); } document.getElementById('colCount').value = gridData[0].length; renderGrid(); renderAlignRow(); }
+
+function delRow(i) {
+  if (gridData.length <= 1) return;
+  merges = merges.filter(m => {
+    if (i >= m.r && i < m.r + m.rowspan) { m.rowspan--; if (m.rowspan <= 0) return false; if (i === m.r) m.r++; }
+    if (i < m.r) m.r--;
+    return m.rowspan > 0;
+  });
+  gridData.splice(i, 1); rowHeights.splice(i, 1); rowHlines.splice(i, 1);
+  document.getElementById('rowCount').value = gridData.length;
+  selection = null; renderGrid();
+}
+
+function delCol(j) {
+  if (gridData[0].length <= 1) return;
+  merges = merges.filter(m => {
+    if (j >= m.c && j < m.c + m.colspan) { m.colspan--; if (m.colspan <= 0) return false; if (j === m.c) m.c++; }
+    if (j < m.c) m.c--;
+    return m.colspan > 0;
+  });
+  gridData.forEach(row => row.splice(j, 1)); colAligns.splice(j, 1); colWidthSpecs.splice(j, 1); colWidths.splice(j, 1);
+  document.getElementById('colCount').value = gridData[0].length;
+  selection = null; renderGrid(); renderAlignRow();
+}
+
+function clearGrid() { pushUndo(); gridData.forEach(row => row.fill('')); merges = []; cellColors = {}; selection = null; renderGrid(); }
+
+function resizeGrid() {
+  pushUndo();
+  const r = parseInt(document.getElementById('rowCount').value);
+  const c = parseInt(document.getElementById('colCount').value);
+  const oldData = gridData.map(row => [...row]);
+  const oldAligns = [...colAligns];
+  const oldWSpecs = [...colWidthSpecs];
+  colAligns = [];
+  colWidthSpecs = [];
+  for (let j = 0; j < c; j++) { colAligns.push(oldAligns[j] || 'l'); colWidthSpecs.push(oldWSpecs[j] || '2cm'); }
+  merges = merges.filter(m => m.r + m.rowspan <= r && m.c + m.colspan <= c);
+  initGrid(r, c, oldData);
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function showStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.color = isError ? '#fa5252' : '#12b886';
+  setTimeout(() => el.textContent = '', 3000);
+}
+
+// --- IMPORT LATEX ---
+function importLatex() {
+  const raw = document.getElementById('latexInput').value.trim();
+  if (!raw) { showStatus('Nothing to import.', true); return; }
+  pushUndo();
+  try {
+    const beginMatch = raw.match(/\\begin\{(?:tabular\*?|longtable|array)\}(?:\{[^}]*\})?\s*\{((?:[^}]|\{[^}]*\})*)\}/);
+    if (beginMatch) {
+      const spec = beginMatch[1];
+      colAligns = [];
+      colWidthSpecs = [];
+      let si = 0;
+      while (si < spec.length) {
+        const ch = spec[si];
+        if ('lcr'.includes(ch)) {
+          colAligns.push(ch);
+          colWidthSpecs.push('2cm');
+          si++;
+        } else if ('pmb'.includes(ch)) {
+          // Parse p{width}, m{width}, b{width}
+          colAligns.push(ch);
+          si++;
+          if (spec[si] === '{') {
+            const end = spec.indexOf('}', si);
+            colWidthSpecs.push(spec.substring(si + 1, end));
+            si = end + 1;
+          } else {
+            colWidthSpecs.push('2cm');
+          }
+        } else {
+          si++; // skip |, @{}, etc.
+        }
+      }
+    }
+    let body = raw;
+    const bodyMatch = raw.match(/\\begin\{(?:tabular\*?|longtable|array)\}(?:\{[^}]*\})?\s*\{[^}]*\}([\s\S]*)\\end\{/);
+    if (bodyMatch) body = bodyMatch[1];
+
+    // Detect booktabs
+    const isBooktabs = raw.includes('\\toprule') || raw.includes('\\bottomrule');
+    if (isBooktabs) {
+      document.getElementById('optBooktabs').checked = true;
+      document.getElementById('optHlines').checked = false;
+    }
+
+    // Detect top hline
+    topHline = /\\begin\{[^}]*\}\{[^}]*\}\s*(?:\\hline|\\toprule)/.test(raw);
+
+    // Split into segments by \\ to detect which rows have hlines after them
+    const segments = body.split(/\\\\/);
+    const rowTexts = [];
+    const afterRowHasLine = [];
+    for (let si = 0; si < segments.length; si++) {
+      let seg = segments[si].trim();
+      if (!seg) { // empty segment between \\\\ — check if next starts with hline
+        continue;
+      }
+      // Check if this segment starts with a line command (belongs to previous row)
+      const lineStart = seg.match(/^\\(?:hline|midrule|bottomrule|cline\{[^}]*\})\s*/);
+      if (lineStart && rowTexts.length > 0) {
+        afterRowHasLine[rowTexts.length - 1] = true;
+        seg = seg.replace(/^(?:\\(?:hline|midrule|bottomrule|cline\{[^}]*\})\s*)+/, '').trim();
+        if (!seg) continue;
+      }
+      // Clean remaining line commands from within the row text
+      const cleanSeg = seg.replace(/\\(?:hline|toprule|midrule|bottomrule|cline\{[^}]*\})\s*/g, '').trim();
+      if (cleanSeg) {
+        rowTexts.push(cleanSeg);
+        afterRowHasLine.push(false);
+      }
+    }
+
+    merges = [];
+    const data = [];
+    const rowStrings = rowTexts;
+    rowStrings.forEach((rs, rowIdx) => {
+      const cells = splitLatexRow(rs);
+      const parsedRow = [];
+      let colPos = 0;
+      cells.forEach(rawCell => {
+        const cell = rawCell.trim();
+        const mcMatch = cell.match(/^\\multicolumn\{(\d+)\}\{([^}]*)\}\{(.*)\}$/);
+        const mrMatch = cell.match(/^\\multirow\{(\d+)\}\{([^}]*)\}\{(.*)\}$/);
+        if (mcMatch) {
+          const span = parseInt(mcMatch[1]), content = mcMatch[3];
+          parsedRow.push(content);
+          for (let k = 1; k < span; k++) parsedRow.push('');
+          merges.push({r: rowIdx, c: colPos, rowspan: 1, colspan: span});
+          colPos += span;
+        } else if (mrMatch) {
+          const span = parseInt(mrMatch[1]), content = mrMatch[3];
+          parsedRow.push(content);
+          merges.push({r: rowIdx, c: colPos, rowspan: span, colspan: 1});
+          colPos += 1;
+        } else { parsedRow.push(cell); colPos += 1; }
+      });
+      data.push(parsedRow);
+    });
+    const maxCols = Math.max(...data.map(r => r.length), colAligns.length || 0);
+    data.forEach(r => { while (r.length < maxCols) r.push(''); });
+    while (colAligns.length < maxCols) colAligns.push('l');
+    colAligns = colAligns.slice(0, maxCols);
+    const specRaw = beginMatch ? beginMatch[1] : '';
+    document.getElementById('optBorders').checked = specRaw.includes('|');
+    rowHlines = [];
+    for (let i = 0; i < data.length; i++) {
+      rowHlines.push(!!afterRowHasLine[i]);
+    }
+    initGrid(data.length, maxCols, data);
+    showStatus(`Imported ${data.length} rows \u00d7 ${maxCols} columns` + (merges.length ? `, ${merges.length} merged regions.` : '.'));
+  } catch (err) { showStatus('Import error: ' + err.message, true); }
+}
+
+function splitLatexRow(s) {
+  const parts = []; let depth = 0, start = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') depth--;
+    else if (s[i] === '&' && depth === 0) { parts.push(s.substring(start, i)); start = i + 1; }
+  }
+  parts.push(s.substring(start));
+  return parts;
+}
+
+// --- EXPORT LATEX ---
+function exportLatex() {
+  if (!gridData.length) { showStatus('Grid is empty.', true); return; }
+  const booktabs = document.getElementById('optBooktabs').checked;
+  const borders = document.getElementById('optBorders').checked;
+  const boldHeader = document.getElementById('optBoldHeader').checked;
+  const altShading = document.getElementById('optAltShading').checked;
+  const env = document.getElementById('optEnv').value;
+  const needMultirow = merges.some(m => m.rowspan > 1);
+
+  // Build column spec
+  const specParts = colAligns.map((a, j) => {
+    if ('pmb'.includes(a)) return `${a}{${colWidthSpecs[j] || '2cm'}}`;
+    return a;
+  });
+  let spec;
+  if (borders) spec = '|' + specParts.join('|') + '|';
+  else spec = specParts.join('');
+
+  const rows = gridData.length, cols = gridData[0].length;
+  let lines = [];
+  if (needMultirow) lines.push('% Requires: \\usepackage{multirow}');
+  if (booktabs) lines.push('% Requires: \\usepackage{booktabs}');
+  if (altShading) lines.push('% Requires: \\usepackage[table]{xcolor}');
+  const needSout = gridData.some(row => row.some(cell => /\\sout\{/.test(cell)));
+  if (needSout) lines.push('% Requires: \\usepackage[normalem]{ulem}');
+  const needXcolor = Object.keys(cellColors).length > 0;
+  if (needXcolor && !altShading) lines.push('% Requires: \\usepackage[table]{xcolor}');
+  lines.push(`\\begin{${env}}{${spec}}`);
+  if (booktabs && topHline) lines.push('\\toprule');
+  else if (topHline) lines.push('\\hline');
+
+  // Helper: wrap content with cell colors
+  function wrapCellColor(content, r, c) {
+    const cc = cellColors[`${r},${c}`];
+    if (!cc) return content;
+    let out = content;
+    if (cc.fg && out) out = `\\textcolor${hexToLatexRgb(cc.fg)}{${out}}`;
+    if (cc.bg) out = `\\cellcolor${hexToLatexRgb(cc.bg)} ${out}`;
+    return out;
+  }
+
+  for (let i = 0; i < rows; i++) {
+    // Alternating row shading (skip header row 0)
+    let rowPrefix = '';
+    if (altShading && i > 0 && i % 2 === 0) {
+      rowPrefix = '\\rowcolor{gray!10} ';
+    }
+
+    const cellStrs = [];
+    for (let j = 0; j < cols; ) {
+      const m = getMergeAt(i, j);
+      if (m && m.r === i && m.c === j) {
+        let content = gridData[i][j];
+        if (boldHeader && i === 0 && content) content = `\\textbf{${content}}`;
+        content = wrapCellColor(content, i, j);
+        const mergeAlign = 'c';
+        if (m.colspan > 1 && m.rowspan > 1) {
+          const colSpec = borders ? `|${mergeAlign}|` : mergeAlign;
+          cellStrs.push(`\\multicolumn{${m.colspan}}{${colSpec}}{\\multirow{${m.rowspan}}{*}{${content}}}`);
+        } else if (m.colspan > 1) {
+          const colSpec = borders ? `|${mergeAlign}|` : mergeAlign;
+          cellStrs.push(`\\multicolumn{${m.colspan}}{${colSpec}}{${content}}`);
+        } else if (m.rowspan > 1) {
+          cellStrs.push(`\\multirow{${m.rowspan}}{*}{${content}}`);
+        } else { cellStrs.push(content); }
+        j += m.colspan;
+      } else if (m && m.r !== i) {
+        if (m.colspan > 1) {
+          const mergeAlign = 'c';
+          const colSpec = borders ? `|${mergeAlign}|` : mergeAlign;
+          cellStrs.push(`\\multicolumn{${m.colspan}}{${colSpec}}{}`);
+          j += m.colspan;
+        } else { cellStrs.push(''); j++; }
+      } else {
+        let content = gridData[i][j];
+        if (boldHeader && i === 0 && content) content = `\\textbf{${content}}`;
+        content = wrapCellColor(content, i, j);
+        cellStrs.push(content);
+        j++;
+      }
+    }
+    let line = rowPrefix + cellStrs.join(' & ') + ' \\\\';
+
+    // Horizontal line after this row (per-row control)
+    if (rowHlines[i]) {
+      if (booktabs) {
+        if (i === rows - 1) line += '\n\\bottomrule';
+        else line += '\n\\midrule';
+      } else {
+        // Use \cline to skip columns with active multirow
+        const clineRanges = [];
+        let jj = 0;
+        while (jj < cols) {
+          const m = getMergeAt(i, jj);
+          if (m && m.rowspan > 1 && i < m.r + m.rowspan - 1) { jj += m.colspan; continue; }
+          const start = jj;
+          while (jj < cols) {
+            const m2 = getMergeAt(i, jj);
+            if (m2 && m2.rowspan > 1 && i < m2.r + m2.rowspan - 1) break;
+            if (m2 && m2.c === jj) jj += m2.colspan; else jj++;
+          }
+          if (jj > start) clineRanges.push([start + 1, jj]);
+        }
+        if (clineRanges.length === 1 && clineRanges[0][0] === 1 && clineRanges[0][1] === cols) line += '\n\\hline';
+        else if (clineRanges.length > 0) line += '\n' + clineRanges.map(([a, b]) => `\\cline{${a}-${b}}`).join(' ');
+      }
+    }
+    lines.push(line);
+  }
+  lines.push(`\\end{${env}}`);
+  document.getElementById('latexInput').value = lines.join('\n');
+  autoSave();
+  showStatus('Exported to LaTeX.' + (merges.length ? ` (${merges.length} merged regions)` : ''));
+}
+
+function copyLatex() {
+  const ta = document.getElementById('latexInput');
+  if (!ta.value.trim()) { showStatus('Nothing to copy.', true); return; }
+  navigator.clipboard.writeText(ta.value).then(
+    () => showStatus('Copied to clipboard!'),
+    () => { ta.select(); document.execCommand('copy'); showStatus('Copied to clipboard!'); }
+  );
+}
+
+// --- CSV IMPORT / EXPORT ---
+function importCSV() {
+  document.getElementById('csvFileInput').click();
+}
+
+function handleCSVFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    pushUndo();
+    const text = ev.target.result;
+    const sep = text.includes('\t') ? '\t' : ',';
+    const lines = text.replace(/\r/g, '').split('\n').filter(s => s.trim().length);
+    const data = lines.map(line => parseCSVLine(line, sep));
+    const maxCols = Math.max(...data.map(r => r.length));
+    data.forEach(r => { while (r.length < maxCols) r.push(''); });
+    merges = [];
+    colAligns = Array(maxCols).fill('l');
+    initGrid(data.length, maxCols, data);
+    showStatus(`Imported CSV: ${data.length} rows \u00d7 ${maxCols} columns.`);
+  };
+  reader.readAsText(file);
+  e.target.value = ''; // reset so same file can be re-imported
+}
+
+function parseCSVLine(line, sep) {
+  const cells = [];
+  let current = '', inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i+1] === '"') { current += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else current += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === sep) { cells.push(current); current = ''; }
+      else current += ch;
+    }
+  }
+  cells.push(current);
+  return cells;
+}
+
+function exportCSV() {
+  if (!gridData.length) { showStatus('Grid is empty.', true); return; }
+  const lines = gridData.map(row =>
+    row.map(cell => {
+      if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) return '"' + cell.replace(/"/g, '""') + '"';
+      return cell;
+    }).join(',')
+  );
+  const csv = lines.join('\n');
+  const blob = new Blob([csv], {type: 'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'table.csv'; a.click();
+  URL.revokeObjectURL(url);
+  showStatus('Downloaded table.csv');
+}
+
+// --- CLIPBOARD: COPY / CUT / PASTE / DELETE ---
+let clipboard = null;
+
+function getSelectionData() {
+  if (!selection) return null;
+  const {r1, c1, r2, c2} = selection;
+  const data = [];
+  for (let i = r1; i <= r2; i++) { const row = []; for (let j = c1; j <= c2; j++) row.push(gridData[i][j]); data.push(row); }
+  const selMerges = merges.filter(m => m.r >= r1 && m.r + m.rowspan - 1 <= r2 && m.c >= c1 && m.c + m.colspan - 1 <= c2)
+    .map(m => ({dr: m.r - r1, dc: m.c - c1, rowspan: m.rowspan, colspan: m.colspan}));
+  return {data, merges: selMerges};
+}
+
+function selectionToTSV() {
+  if (!selection) return '';
+  const {r1, c1, r2, c2} = selection;
+  const lines = [];
+  for (let i = r1; i <= r2; i++) { const cells = []; for (let j = c1; j <= c2; j++) cells.push(gridData[i][j]); lines.push(cells.join('\t')); }
+  return lines.join('\n');
+}
+
+function clearSelectionData() {
+  if (!selection) return;
+  const {r1, c1, r2, c2} = selection;
+  for (let i = r1; i <= r2; i++) for (let j = c1; j <= c2; j++) gridData[i][j] = '';
+  merges = merges.filter(m => !(m.r >= r1 && m.r + m.rowspan - 1 <= r2 && m.c >= c1 && m.c + m.colspan - 1 <= c2));
+}
+
+function doCopy(isCut) {
+  if (!selection) return false;
+  const selData = getSelectionData();
+  clipboard = {data: selData.data, merges: selData.merges, isCut};
+  const tsv = selectionToTSV();
+  navigator.clipboard.writeText(tsv).catch(() => {});
+  const {r1, c1, r2, c2} = selection;
+  showStatus(`${isCut ? 'Cut' : 'Copied'} ${r2-r1+1}\u00d7${c2-c1+1} cells.`);
+  if (isCut) { pushUndo(); clearSelectionData(); renderGrid(); }
+  return true;
+}
+
+function doPaste(startR, startC, text) {
+  pushUndo();
+  if (clipboard && clipboard.data.length) {
+    const data = clipboard.data, rows = data.length, cols = data[0].length;
+    while (gridData.length < startR + rows) { gridData.push(Array(gridData[0].length).fill('')); rowHeights.push(DEFAULT_ROW_HEIGHT); }
+    while (gridData[0].length < startC + cols) { gridData.forEach(r => r.push('')); colAligns.push('l'); colWidths.push(DEFAULT_COL_WIDTH); }
+    for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) gridData[startR + i][startC + j] = data[i][j];
+    merges = merges.filter(m => { const mr2 = m.r + m.rowspan - 1, mc2 = m.c + m.colspan - 1; return !(m.r <= startR + rows - 1 && mr2 >= startR && m.c <= startC + cols - 1 && mc2 >= startC); });
+    clipboard.merges.forEach(cm => merges.push({r: startR + cm.dr, c: startC + cm.dc, rowspan: cm.rowspan, colspan: cm.colspan}));
+    document.getElementById('rowCount').value = gridData.length;
+    document.getElementById('colCount').value = gridData[0].length;
+    renderGrid(); renderAlignRow();
+    showStatus(`Pasted ${rows}\u00d7${cols} cells.`);
+    return;
+  }
+  if (!text) return;
+  const lines = text.replace(/\r/g, '').split('\n').filter(s => s.length);
+  const parsed = lines.map(r => r.split('\t'));
+  const rows = parsed.length, cols = Math.max(...parsed.map(r => r.length));
+  while (gridData.length < startR + rows) { gridData.push(Array(gridData[0].length).fill('')); rowHeights.push(DEFAULT_ROW_HEIGHT); }
+  while (gridData[0].length < startC + cols) { gridData.forEach(r => r.push('')); colAligns.push('l'); colWidths.push(DEFAULT_COL_WIDTH); }
+  parsed.forEach((row, ri) => row.forEach((cell, ci) => { if (startR + ri < gridData.length && startC + ci < gridData[0].length) gridData[startR + ri][startC + ci] = cell; }));
+  document.getElementById('rowCount').value = gridData.length;
+  document.getElementById('colCount').value = gridData[0].length;
+  renderGrid(); renderAlignRow();
+  showStatus(`Pasted ${rows}\u00d7${cols} cells from clipboard.`);
+}
+
+// --- KEYBOARD SHORTCUTS ---
+document.addEventListener('keydown', function(e) {
+  const active = document.activeElement;
+  const inGrid = active && active.tagName === 'INPUT' && active.dataset.r != null;
+  const isCtrl = e.ctrlKey || e.metaKey;
+
+  // Undo / Redo — works globally
+  if (isCtrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+  if (isCtrl && (e.key === 'Z' || (e.key === 'z' && e.shiftKey)) ) { e.preventDefault(); redo(); return; }
+  if (isCtrl && e.key === 'y') { e.preventDefault(); redo(); return; }
+
+  if (!inGrid) return;
+
+  // Ctrl+A — select all cells
+  if (isCtrl && e.key === 'a') {
+    e.preventDefault();
+    const rows = gridData.length, cols = gridData[0].length;
+    selAnchor = {r: 0, c: 0};
+    setSelection(0, 0, rows - 1, cols - 1);
+    renderGrid();
+    return;
+  }
+
+  // Formatting shortcuts
+  if (isCtrl && e.key === 'b') { e.preventDefault(); toggleFormat('textbf'); return; }
+  if (isCtrl && e.key === 'i') { e.preventDefault(); toggleFormat('textit'); return; }
+  if (isCtrl && e.key === 'u') { e.preventDefault(); toggleFormat('underline'); return; }
+
+  // Copy — only intercept with multi-cell selection
+  const isMultiSel = selection && ((selection.r2 - selection.r1) + (selection.c2 - selection.c1) > 0);
+  if (isCtrl && e.key === 'c') {
+    if (isMultiSel) { e.preventDefault(); doCopy(false); return; }
+    clipboard = null; // clear internal clipboard so next paste is native
+  }
+  // Cut — only intercept with multi-cell selection
+  if (isCtrl && e.key === 'x') {
+    if (isMultiSel) { e.preventDefault(); doCopy(true); return; }
+    clipboard = null;
+  }
+  // Paste — only intercept when we have internal multi-cell clipboard or multi-cell selection
+  if (isCtrl && e.key === 'v') {
+    const hasMultiClip = clipboard && clipboard.data.length && (clipboard.data.length > 1 || clipboard.data[0].length > 1);
+    if (isMultiSel || hasMultiClip) {
+      e.preventDefault();
+      const startR = selection ? selection.r1 : +active.dataset.r;
+      const startC = selection ? selection.c1 : +active.dataset.c;
+      if (clipboard && clipboard.data.length) { doPaste(startR, startC, null); }
+      else { navigator.clipboard.readText().then(text => doPaste(startR, startC, text)).catch(() => {}); }
+      return;
+    }
+    // Otherwise let browser handle native paste into the input
+  }
+  // Delete
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
+    const selSize = (selection.r2 - selection.r1 + 1) * (selection.c2 - selection.c1 + 1);
+    if (selSize > 1) { e.preventDefault(); pushUndo(); clearSelectionData(); renderGrid(); showStatus('Cleared selected cells.'); }
+  }
+});
+
+// Clicking outside grid clears selection
+document.addEventListener('mousedown', function(e) {
+  if (!e.target.closest('table.grid') && !e.target.closest('.grid-toolbar')) {
+    if (selection) { selection = null; selAnchor = null; renderGrid(); }
+  }
+});
+
+// --- COLUMN RESIZE ---
+function startColResize(e, colIdx) {
+  e.preventDefault(); e.stopPropagation();
+  const startX = e.clientX, startWidth = colWidths[colIdx];
+  document.body.classList.add('resizing');
+  const handle = e.target; handle.classList.add('active');
+  function onMove(ev) { colWidths[colIdx] = Math.max(MIN_COL_WIDTH, startWidth + ev.clientX - startX); const col = document.querySelector(`#gridTable colgroup col:nth-child(${colIdx + 2})`); if (col) col.style.width = colWidths[colIdx] + 'px'; }
+  function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.classList.remove('resizing'); handle.classList.remove('active'); autoSave(); }
+  document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+}
+
+// --- ROW RESIZE ---
+function startRowResize(e, rowIdx) {
+  e.preventDefault(); e.stopPropagation();
+  const startY = e.clientY, startHeight = rowHeights[rowIdx];
+  document.body.classList.add('resizing-row');
+  const handle = e.target; handle.classList.add('active');
+  function onMove(ev) { rowHeights[rowIdx] = Math.max(MIN_ROW_HEIGHT, startHeight + ev.clientY - startY); const tr = document.querySelector(`#gridTable tbody tr:nth-child(${rowIdx + 1})`); if (tr) tr.style.height = rowHeights[rowIdx] + 'px'; }
+  function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.classList.remove('resizing-row'); handle.classList.remove('active'); autoSave(); }
+  document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+}
+
+// --- TOGGLE LATEX PANEL ---
+function toggleLatexPanel() {
+  const panel = document.getElementById('latexPanel');
+  const btn = document.getElementById('toggleLatexBtn');
+  const divider = document.getElementById('panelDivider');
+  panel.classList.toggle('collapsed');
+  const collapsed = panel.classList.contains('collapsed');
+  btn.textContent = collapsed ? 'Show LaTeX Panel' : 'Hide LaTeX Panel';
+  divider.classList.toggle('hidden', collapsed);
+}
+
+// --- PANEL DIVIDER RESIZE ---
+function startPanelResize(e) {
+  e.preventDefault();
+  const panel = document.getElementById('latexPanel');
+  const startX = e.clientX, startWidth = panel.offsetWidth;
+  const divider = document.getElementById('panelDivider');
+  divider.classList.add('active');
+  document.body.classList.add('resizing-panels');
+  function onMove(ev) { panel.style.width = Math.max(200, Math.min(startWidth + ev.clientX - startX, window.innerWidth - 400)) + 'px'; }
+  function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); divider.classList.remove('active'); document.body.classList.remove('resizing-panels'); }
+  document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+}
+
+// --- CONTEXT MENU ---
+let ctxMenu = null;
+function hideCtxMenu() { if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; } }
+document.addEventListener('click', hideCtxMenu);
+
+function createCtxMenu(x, y, items) {
+  hideCtxMenu();
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  items.forEach(item => {
+    if (item === '---') { const sep = document.createElement('div'); sep.className = 'sep'; menu.appendChild(sep); }
+    else {
+      const row = document.createElement('div');
+      row.innerHTML = item.label + (item.shortcut ? `<span class="shortcut">${item.shortcut}</span>` : '');
+      row.addEventListener('click', function(e) { e.stopPropagation(); hideCtxMenu(); item.action(); });
+      menu.appendChild(row);
+    }
+  });
+  menu.style.left = x + 'px'; menu.style.top = y + 'px';
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+  ctxMenu = menu;
+}
+
+function showRowCtx(e, rowIdx) {
+  e.preventDefault(); e.stopPropagation();
+  createCtxMenu(e.clientX, e.clientY, [
+    { label: 'Insert row above', action: () => { pushUndo(); insertRowAt(rowIdx); } },
+    { label: 'Insert row below', action: () => { pushUndo(); insertRowAt(rowIdx + 1); } },
+    '---',
+    { label: 'Delete this row', action: () => { pushUndo(); delRow(rowIdx); } },
+  ]);
+}
+
+function showColCtx(e, colIdx) {
+  e.preventDefault(); e.stopPropagation();
+  createCtxMenu(e.clientX, e.clientY, [
+    { label: 'Insert column left', action: () => { pushUndo(); insertColAt(colIdx); } },
+    { label: 'Insert column right', action: () => { pushUndo(); insertColAt(colIdx + 1); } },
+    '---',
+    { label: 'Delete this column', action: () => { pushUndo(); delCol(colIdx); } },
+  ]);
+}
+
+function insertRowAt(idx) {
+  const cols = gridData.length > 0 ? gridData[0].length : 1;
+  gridData.splice(idx, 0, Array(cols).fill(''));
+  rowHeights.splice(idx, 0, DEFAULT_ROW_HEIGHT);
+  rowHlines.splice(idx, 0, false);
+  merges.forEach(m => { if (m.r >= idx) m.r++; else if (m.r + m.rowspan > idx) m.rowspan++; });
+  selection = null;
+  document.getElementById('rowCount').value = gridData.length;
+  renderGrid();
+}
+
+function insertColAt(idx) {
+  gridData.forEach(row => row.splice(idx, 0, ''));
+  colAligns.splice(idx, 0, 'l');
+  colWidthSpecs.splice(idx, 0, '2cm');
+  colWidths.splice(idx, 0, DEFAULT_COL_WIDTH);
+  merges.forEach(m => { if (m.c >= idx) m.c++; else if (m.c + m.colspan > idx) m.colspan++; });
+  selection = null;
+  document.getElementById('colCount').value = gridData[0].length;
+  renderGrid(); renderAlignRow();
+}
+
+// Cell right-click context menu
+document.getElementById('gridTable').addEventListener('contextmenu', function(e) {
+  const td = e.target.closest('td');
+  if (!td || td.classList.contains('row-num')) return;
+  const input = td.querySelector('input');
+  if (!input) return;
+  const r = +input.dataset.r, c = +input.dataset.c;
+  e.preventDefault(); e.stopPropagation();
+  const items = [
+    { label: 'Insert row above', action: () => { pushUndo(); insertRowAt(r); } },
+    { label: 'Insert row below', action: () => { pushUndo(); insertRowAt(r + 1); } },
+    { label: 'Insert column left', action: () => { pushUndo(); insertColAt(c); } },
+    { label: 'Insert column right', action: () => { pushUndo(); insertColAt(c + 1); } },
+    '---',
+    { label: 'Copy', shortcut: 'Ctrl+C', action: () => { if (selection) doCopy(false); } },
+    { label: 'Cut', shortcut: 'Ctrl+X', action: () => { if (selection) doCopy(true); } },
+    { label: 'Paste', shortcut: 'Ctrl+V', action: () => { const sr = selection ? selection.r1 : r; const sc = selection ? selection.c1 : c; if (clipboard && clipboard.data.length) doPaste(sr, sc, null); else navigator.clipboard.readText().then(text => doPaste(sr, sc, text)).catch(() => {}); } },
+    '---',
+    { label: 'Delete row ' + (r + 1), action: () => { pushUndo(); delRow(r); } },
+    { label: 'Delete column ' + (colLetters[c] || c + 1), action: () => { pushUndo(); delCol(c); } },
+  ];
+  const m = getMergeAt(r, c);
+  if (m) { items.push('---'); items.push({ label: 'Unmerge this cell', action: () => { selection = {r1: m.r, c1: m.c, r2: m.r + m.rowspan - 1, c2: m.c + m.colspan - 1}; unmergeSelected(); } }); }
+  createCtxMenu(e.clientX, e.clientY, items);
+});
+
+// --- INIT ---
+if (!loadAutoSave()) {
+  initGrid(3, 3);
+}
+</script>
+
+</body>
+</html>
