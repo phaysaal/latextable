@@ -1705,8 +1705,7 @@ function importLatex() {
     data.forEach(r => { while (r.length < maxCols) r.push(''); });
     while (colAligns.length < maxCols) colAligns.push('l');
     colAligns = colAligns.slice(0, maxCols);
-    const specRaw = beginMatch ? beginMatch[1] : '';
-    document.getElementById('optBorders').checked = specRaw.includes('|');
+    document.getElementById('optBorders').checked = spec.includes('|');
     rowHlines = [];
     for (let i = 0; i < data.length; i++) {
       rowHlines.push(!!afterRowHasLine[i]);
