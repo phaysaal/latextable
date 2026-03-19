@@ -265,6 +265,24 @@
 
   .bg-swatch { font-size: 1rem; color: #666; }
 
+  table.grid td.cell-formula input { color: #2563eb; }
+  table.grid td.cell-formula-err input { color: #e03131; }
+
+  .stats-bar {
+    display: flex;
+    gap: 16px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    color: #555;
+    background: #f8f9fb;
+    border-radius: 6px;
+    margin-top: 6px;
+    min-height: 24px;
+    flex-wrap: wrap;
+  }
+  .stats-bar span { font-weight: 600; color: #333; }
+  .stats-bar .stat-label { color: #888; font-weight: 400; }
+
   table.grid td input:focus {
     background: #edf2ff;
     outline: 2px solid #4a6cf7;
@@ -520,6 +538,7 @@ Bob & 30 & 88.0 \\
     <div style="overflow:auto; margin-top:8px; padding-top:16px; padding-left: 20px;">
       <table class="grid" id="gridTable"></table>
     </div>
+    <div class="stats-bar" id="statsBar"></div>
   </div>
 </div>
 
@@ -548,6 +567,174 @@ const colLetters = 'ABCDEFGHIJKLMNOPQRST';
 let selection = null;
 let selAnchor = null;
 let isDragging = false;
+
+// --- FORMULA ENGINE ---
+function isFormula(val) { return typeof val === 'string' && val.startsWith('='); }
+
+// Parse a cell reference like "A1" -> {r:0, c:0}, "C10" -> {r:9, c:2}
+function parseCellRef(ref) {
+  const m = ref.match(/^([A-Z])(\d+)$/i);
+  if (!m) return null;
+  const c = m[1].toUpperCase().charCodeAt(0) - 65;
+  const r = parseInt(m[2]) - 1;
+  return {r, c};
+}
+
+// Parse a range like "A1:C3" -> array of {r,c}
+function parseRange(range) {
+  const parts = range.split(':');
+  if (parts.length === 1) {
+    const ref = parseCellRef(parts[0].trim());
+    return ref ? [ref] : [];
+  }
+  const start = parseCellRef(parts[0].trim());
+  const end = parseCellRef(parts[1].trim());
+  if (!start || !end) return [];
+  const cells = [];
+  for (let r = Math.min(start.r, end.r); r <= Math.max(start.r, end.r); r++)
+    for (let c = Math.min(start.c, end.c); c <= Math.max(start.c, end.c); c++)
+      cells.push({r, c});
+  return cells;
+}
+
+// Get numeric value of a cell (resolve formulas recursively, with cycle detection)
+function getCellValue(r, c, visited) {
+  if (!visited) visited = new Set();
+  const key = `${r},${c}`;
+  if (visited.has(key)) return NaN; // circular reference
+  if (r < 0 || r >= gridData.length || c < 0 || c >= gridData[0].length) return NaN;
+  const raw = gridData[r][c];
+  if (isFormula(raw)) {
+    visited.add(key);
+    return evalFormula(raw, visited);
+  }
+  // Strip LaTeX formatting to get the number
+  const num = parseFloat(stripLatex(raw));
+  return isNaN(num) ? 0 : num;
+}
+
+// Strip common LaTeX formatting wrappers to extract the text/number
+function stripLatex(s) {
+  let v = s.trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const m = v.match(/^\\(?:textbf|textit|texttt|textsc|underline|emph|sout)\{(.*)\}$/);
+    if (m) { v = m[1]; changed = true; }
+  }
+  return v.trim();
+}
+
+// Collect numeric values from a range string (e.g. "A1:A10" or "A1,B2,C1:C5")
+function collectValues(argsStr, visited) {
+  const nums = [];
+  // Split by comma for multiple args/ranges
+  const parts = argsStr.split(',');
+  for (const part of parts) {
+    const cells = parseRange(part.trim());
+    for (const {r, c} of cells) {
+      const v = getCellValue(r, c, new Set(visited));
+      nums.push(v);
+    }
+  }
+  return nums;
+}
+
+function evalFormula(formula, visited) {
+  if (!visited) visited = new Set();
+  const expr = formula.substring(1).trim(); // remove '='
+
+  // Function call: func(args)
+  const fnMatch = expr.match(/^(\w+)\((.+)\)$/i);
+  if (fnMatch) {
+    const fn = fnMatch[1].toLowerCase();
+    const argsStr = fnMatch[2];
+    const vals = collectValues(argsStr, visited);
+    const numVals = vals.filter(v => !isNaN(v));
+
+    switch (fn) {
+      case 'sum':
+        return numVals.reduce((a, b) => a + b, 0);
+      case 'avg':
+      case 'average':
+        return numVals.length ? numVals.reduce((a, b) => a + b, 0) / numVals.length : 0;
+      case 'min':
+        return numVals.length ? Math.min(...numVals) : 0;
+      case 'max':
+        return numVals.length ? Math.max(...numVals) : 0;
+      case 'count':
+        return numVals.length;
+      case 'median': {
+        if (!numVals.length) return 0;
+        const sorted = [...numVals].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      }
+      case 'stdev': {
+        if (numVals.length < 2) return 0;
+        const mean = numVals.reduce((a, b) => a + b, 0) / numVals.length;
+        const variance = numVals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (numVals.length - 1);
+        return Math.sqrt(variance);
+      }
+      default:
+        return NaN;
+    }
+  }
+
+  // Simple cell reference: =A1
+  const ref = parseCellRef(expr);
+  if (ref) return getCellValue(ref.r, ref.c, visited);
+
+  // Simple arithmetic: try to evaluate basic math with cell refs
+  // Replace cell references with values
+  try {
+    const mathExpr = expr.replace(/[A-Z]\d+/gi, (match) => {
+      const ref = parseCellRef(match);
+      if (!ref) return '0';
+      return getCellValue(ref.r, ref.c, new Set(visited));
+    });
+    // Only allow safe math characters
+    if (/^[\d\s+\-*/().]+$/.test(mathExpr)) {
+      return Function('"use strict"; return (' + mathExpr + ')')();
+    }
+  } catch(e) {}
+
+  return NaN;
+}
+
+// Get the display value for a cell (computed if formula, raw otherwise)
+function getDisplayValue(r, c) {
+  const raw = gridData[r][c];
+  if (!isFormula(raw)) return raw;
+  const result = evalFormula(raw);
+  if (isNaN(result)) return '#ERR';
+  // Format: remove unnecessary decimals
+  return Number.isInteger(result) ? String(result) : result.toFixed(4).replace(/\.?0+$/, '');
+}
+
+// Update quick stats bar for current selection
+function updateStatsBar() {
+  const bar = document.getElementById('statsBar');
+  if (!selection) { bar.innerHTML = ''; return; }
+  const nums = [];
+  for (let i = selection.r1; i <= selection.r2; i++) {
+    for (let j = selection.c1; j <= selection.c2; j++) {
+      const v = getCellValue(i, j);
+      if (!isNaN(v) && gridData[i][j].trim() !== '') nums.push(v);
+    }
+  }
+  if (nums.length === 0) { bar.innerHTML = ''; return; }
+  const sum = nums.reduce((a, b) => a + b, 0);
+  const avg = sum / nums.length;
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const fmt = v => Number.isInteger(v) ? String(v) : v.toFixed(4).replace(/\.?0+$/, '');
+  bar.innerHTML = `<span class="stat-label">Sum:</span> <span>${fmt(sum)}</span>`
+    + `<span class="stat-label">Avg:</span> <span>${fmt(avg)}</span>`
+    + `<span class="stat-label">Min:</span> <span>${fmt(min)}</span>`
+    + `<span class="stat-label">Max:</span> <span>${fmt(max)}</span>`
+    + `<span class="stat-label">Count:</span> <span>${nums.length}</span>`;
+}
 
 // --- UNDO / REDO ---
 const undoStack = [];
@@ -776,7 +963,12 @@ function renderGrid() {
         if (cc.fg) cellStyle += `--cell-fg:${cc.fg};`;
       }
       const styleAttr = cellStyle ? ` style="${cellStyle}"` : '';
-      html += `<td${attrs} class="${classes.trim()}"${styleAttr} data-r="${i}" data-c="${j}"><input value="${escHtml(gridData[i][j])}" data-r="${i}" data-c="${j}" oninput="cellInput(this)" onkeydown="cellNav(event, this)" onmousedown="cellMouseDown(event, ${i}, ${j})" onfocus="cellFocus(${i}, ${j})"${cc && cc.fg ? ` style="color:${cc.fg}"` : ''}></td>`;
+      // Formula display: show computed value, but store formula
+      const rawVal = gridData[i][j];
+      const isFml = isFormula(rawVal);
+      const displayVal = isFml ? getDisplayValue(i, j) : rawVal;
+      if (isFml) classes += displayVal === '#ERR' ? ' cell-formula-err' : ' cell-formula';
+      html += `<td${attrs} class="${classes.trim()}"${styleAttr} data-r="${i}" data-c="${j}"><input value="${escHtml(displayVal)}" data-r="${i}" data-c="${j}" data-raw="${escHtml(rawVal)}" oninput="cellInput(this)" onkeydown="cellNav(event, this)" onmousedown="cellMouseDown(event, ${i}, ${j})" onfocus="cellFocus(${i}, ${j})" onblur="cellBlur(this)"${cc && cc.fg ? ` style="color:${cc.fg}"` : ''}></td>`;
     }
     html += '</tr>';
   }
@@ -977,6 +1169,19 @@ function cellMouseDown(e, r, c) {
 function cellFocus(r, c) {
   selAnchor = {r, c};
   updateColorSwatches(r, c);
+  // Show raw formula when editing
+  const input = document.querySelector(`#gridTable input[data-r="${r}"][data-c="${c}"]`);
+  if (input && isFormula(gridData[r][c])) {
+    input.value = gridData[r][c];
+  }
+}
+
+function cellBlur(el) {
+  const r = +el.dataset.r, c = +el.dataset.c;
+  // When leaving a formula cell, show the computed value
+  if (isFormula(gridData[r][c])) {
+    el.value = getDisplayValue(r, c);
+  }
 }
 
 document.addEventListener('mousemove', function(e) {
@@ -1064,6 +1269,7 @@ function updateMergeButtons() {
     const hasInner = merges.some(m => m.r >= selection.r1 && m.r + m.rowspan - 1 <= selection.r2 && m.c >= selection.c1 && m.c + m.colspan - 1 <= selection.c2);
     unmergeBtn.disabled = !hasInner;
   }
+  updateStatsBar();
 }
 
 // --- MERGE / UNMERGE ---
@@ -1381,7 +1587,7 @@ function exportLatex() {
     for (let j = 0; j < cols; ) {
       const m = getMergeAt(i, j);
       if (m && m.r === i && m.c === j) {
-        let content = gridData[i][j];
+        let content = getDisplayValue(i, j);
         if (boldHeader && i === 0 && content) content = `\\textbf{${content}}`;
         content = wrapCellColor(content, i, j);
         const mergeAlign = 'c';
@@ -1403,7 +1609,7 @@ function exportLatex() {
           j += m.colspan;
         } else { cellStrs.push(''); j++; }
       } else {
-        let content = gridData[i][j];
+        let content = getDisplayValue(i, j);
         if (boldHeader && i === 0 && content) content = `\\textbf{${content}}`;
         content = wrapCellColor(content, i, j);
         cellStrs.push(content);
@@ -1500,10 +1706,11 @@ function parseCSVLine(line, sep) {
 
 function exportCSV() {
   if (!gridData.length) { showStatus('Grid is empty.', true); return; }
-  const lines = gridData.map(row =>
-    row.map(cell => {
-      if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) return '"' + cell.replace(/"/g, '""') + '"';
-      return cell;
+  const lines = gridData.map((row, i) =>
+    row.map((cell, j) => {
+      const val = getDisplayValue(i, j);
+      if (val.includes(',') || val.includes('"') || val.includes('\n')) return '"' + val.replace(/"/g, '""') + '"';
+      return val;
     }).join(',')
   );
   const csv = lines.join('\n');
