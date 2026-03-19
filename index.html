@@ -440,6 +440,72 @@
     background: #eef4ff;
   }
 
+  .hints-bar {
+    margin-top: 20px;
+    padding: 0 4px;
+    max-width: 100%;
+  }
+
+  .hints-bar summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #666;
+    padding: 8px 0;
+    user-select: none;
+  }
+
+  .hints-bar summary:hover { color: #4a6cf7; }
+
+  .hints-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    padding: 12px 0;
+  }
+
+  .hint-section {
+    background: #fff;
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  .hint-section h4 {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #4a6cf7;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .hint-section div {
+    font-size: 0.78rem;
+    color: #555;
+    line-height: 1.7;
+  }
+
+  .hint-section kbd {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 0.72rem;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    background: #f1f3f5;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    box-shadow: 0 1px 0 #ccc;
+    color: #333;
+  }
+
+  .hint-section code {
+    font-size: 0.74rem;
+    background: #f1f3f5;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #e03131;
+  }
+
   @media (max-width: 800px) {
     .layout { flex-direction: column; }
   }
@@ -447,13 +513,7 @@
 </head>
 <body>
 
-<div style="display:flex; align-items:center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
-  <h1 style="margin-bottom:0">LaTeX Table Editor</h1>
-  <button class="btn-secondary btn-sm" id="toggleLatexBtn" onclick="toggleLatexPanel()" title="Toggle LaTeX panel">Hide LaTeX Panel</button>
-  <button class="btn-secondary btn-sm" id="undoBtn" onclick="undo()" disabled title="Undo (Ctrl+Z)">Undo</button>
-  <button class="btn-secondary btn-sm" id="redoBtn" onclick="redo()" disabled title="Redo (Ctrl+Shift+Z)">Redo</button>
-  <span id="savedBadge" class="saved-badge">Auto-saved</span>
-</div>
+<h1>LaTeX Table Editor</h1>
 
 <div class="layout">
   <div class="panel panel-latex" id="latexPanel">
@@ -498,8 +558,10 @@ Bob & 30 & 88.0 \\
   <div class="panel-divider" id="panelDivider" onmousedown="startPanelResize(event)"></div>
 
   <div class="panel panel-grid">
-    <h2>Table Grid</h2>
     <div class="grid-toolbar">
+      <button class="btn-secondary btn-sm" id="undoBtn" onclick="undo()" disabled title="Undo (Ctrl+Z)">Undo</button>
+      <button class="btn-secondary btn-sm" id="redoBtn" onclick="redo()" disabled title="Redo (Ctrl+Shift+Z)">Redo</button>
+      <span class="toolbar-sep"></span>
       <button class="btn-secondary btn-sm" onclick="addRow()">+ Row</button>
       <button class="btn-secondary btn-sm" onclick="addCol()">+ Column</button>
       <span class="toolbar-sep"></span>
@@ -534,6 +596,9 @@ Bob & 30 & 88.0 \\
       <select id="colCount" onchange="resizeGrid()">
         <script>for(let i=1;i<=20;i++) document.write(`<option value="${i}" ${i===3?'selected':''}>${i}</option>`)</script>
       </select>
+      <span class="toolbar-sep"></span>
+      <button class="btn-secondary btn-sm" id="toggleLatexBtn" onclick="toggleLatexPanel()" title="Toggle LaTeX panel">Hide LaTeX</button>
+      <span id="savedBadge" class="saved-badge">Auto-saved</span>
     </div>
     <div style="overflow:auto; margin-top:8px; padding-top:16px; padding-left: 20px;">
       <table class="grid" id="gridTable"></table>
@@ -549,6 +614,7 @@ Bob & 30 & 88.0 \\
 let gridData = [];
 let colAligns = [];    // 'l','c','r','p','m','b'
 let colWidthSpecs = []; // width strings for p/m/b, e.g. '2cm', '3in'
+let colInnerAligns = []; // alignment within fixed-width cols: 'l','c','r'
 let colWidths = [];
 let rowHeights = [];
 let merges = [];
@@ -644,26 +710,17 @@ function evalFormula(formula, visited) {
   if (!visited) visited = new Set();
   const expr = formula.substring(1).trim(); // remove '='
 
-  // Function call: func(args)
-  const fnMatch = expr.match(/^(\w+)\((.+)\)$/i);
-  if (fnMatch) {
-    const fn = fnMatch[1].toLowerCase();
-    const argsStr = fnMatch[2];
+  // Evaluate spreadsheet functions (sum, avg, etc.) inline, allowing them
+  // to appear anywhere in an expression like "2*sum(A1:A5)+1"
+  function evalSpreadsheetFn(fn, argsStr) {
     const vals = collectValues(argsStr, visited);
     const numVals = vals.filter(v => !isNaN(v));
-
     switch (fn) {
-      case 'sum':
-        return numVals.reduce((a, b) => a + b, 0);
-      case 'avg':
-      case 'average':
-        return numVals.length ? numVals.reduce((a, b) => a + b, 0) / numVals.length : 0;
-      case 'min':
-        return numVals.length ? Math.min(...numVals) : 0;
-      case 'max':
-        return numVals.length ? Math.max(...numVals) : 0;
-      case 'count':
-        return numVals.length;
+      case 'sum': return numVals.reduce((a, b) => a + b, 0);
+      case 'avg': case 'average': return numVals.length ? numVals.reduce((a, b) => a + b, 0) / numVals.length : 0;
+      case 'min': return numVals.length ? Math.min(...numVals) : 0;
+      case 'max': return numVals.length ? Math.max(...numVals) : 0;
+      case 'count': return numVals.length;
       case 'median': {
         if (!numVals.length) return 0;
         const sorted = [...numVals].sort((a, b) => a - b);
@@ -676,26 +733,62 @@ function evalFormula(formula, visited) {
         const variance = numVals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (numVals.length - 1);
         return Math.sqrt(variance);
       }
-      default:
-        return NaN;
+      default: return null;
     }
   }
 
+  // Replace spreadsheet functions with their computed numeric values
+  // e.g. "2*sum(A1:A5)+avg(B1:B3)" -> "2*(150)+(25)"
+  let resolved = expr;
+  const fnNamesArr = ['sum','avg','average','min','max','count','median','stdev'];
+  for (let safety = 0; safety < 20; safety++) {
+    const fnRe = new RegExp('\\b(' + fnNamesArr.join('|') + ')\\(', 'i');
+    const m = fnRe.exec(resolved);
+    if (!m) break;
+    const fnName = m[1].toLowerCase();
+    const start = m.index;
+    const argsStart = start + m[0].length;
+    // Find matching closing paren
+    let depth = 1, pos = argsStart;
+    while (pos < resolved.length && depth > 0) {
+      if (resolved[pos] === '(') depth++;
+      else if (resolved[pos] === ')') depth--;
+      pos++;
+    }
+    const argsStr = resolved.substring(argsStart, pos - 1);
+    const result = evalSpreadsheetFn(fnName, argsStr);
+    const replacement = result !== null ? '(' + result + ')' : '(0)';
+    resolved = resolved.substring(0, start) + replacement + resolved.substring(pos);
+  }
+
   // Simple cell reference: =A1
-  const ref = parseCellRef(expr);
+  const ref = parseCellRef(resolved.trim());
   if (ref) return getCellValue(ref.r, ref.c, visited);
 
-  // Simple arithmetic: try to evaluate basic math with cell refs
-  // Replace cell references with values
+  // Arithmetic with cell refs, math functions, and constants
   try {
-    const mathExpr = expr.replace(/[A-Z]\d+/gi, (match) => {
-      const ref = parseCellRef(match);
-      if (!ref) return '0';
-      return getCellValue(ref.r, ref.c, new Set(visited));
-    });
-    // Only allow safe math characters
-    if (/^[\d\s+\-*/().]+$/.test(mathExpr)) {
-      return Function('"use strict"; return (' + mathExpr + ')')();
+    let mathExpr = resolved
+      // Replace cell references with their numeric values
+      .replace(/[A-Z]\d+/gi, (match) => {
+        const r = parseCellRef(match);
+        if (!r) return '0';
+        return '(' + getCellValue(r.r, r.c, new Set(visited)) + ')';
+      })
+      // Replace ^ with ** for exponentiation
+      .replace(/\^/g, '**')
+      // Replace JS math functions
+      .replace(/\b(abs|sqrt|round|floor|ceil|log|log2|log10|exp|sin|cos|tan|asin|acos|atan)\b/gi,
+        (m) => 'Math.' + m.toLowerCase())
+      // Replace constants
+      .replace(/\bpi\b/gi, 'Math.PI')
+      .replace(/\be\b/gi, 'Math.E')
+      // pow(a,b)
+      .replace(/\bpow\(/gi, 'Math.pow(');
+    // Safety: only allow digits, math ops, parens, dots, commas, Math.*
+    const stripped = mathExpr.replace(/Math\.\w+/g, '').replace(/Math/g, '');
+    if (/^[\d\s+\-*/%().,]+$/.test(stripped)) {
+      const result = Function('"use strict"; return (' + mathExpr + ')')();
+      if (typeof result === 'number') return result;
     }
   } catch(e) {}
 
@@ -746,6 +839,7 @@ function captureState() {
     gridData: gridData.map(r => [...r]),
     colAligns: [...colAligns],
     colWidthSpecs: [...colWidthSpecs],
+    colInnerAligns: [...colInnerAligns],
     colWidths: [...colWidths],
     rowHeights: [...rowHeights],
     merges: merges.map(m => ({...m})),
@@ -759,6 +853,7 @@ function restoreState(state) {
   gridData = state.gridData.map(r => [...r]);
   colAligns = [...state.colAligns];
   colWidthSpecs = state.colWidthSpecs ? [...state.colWidthSpecs] : Array(colAligns.length).fill('2cm');
+  colInnerAligns = state.colInnerAligns ? [...state.colInnerAligns] : Array(colAligns.length).fill('l');
   colWidths = [...state.colWidths];
   rowHeights = [...state.rowHeights];
   merges = state.merges.map(m => ({...m}));
@@ -839,6 +934,7 @@ function loadAutoSave() {
     gridData = state.gridData;
     colAligns = state.colAligns || Array(gridData[0].length).fill('l');
     colWidthSpecs = state.colWidthSpecs || Array(gridData[0].length).fill('2cm');
+    colInnerAligns = state.colInnerAligns || Array(gridData[0].length).fill('l');
     colWidths = state.colWidths || Array(gridData[0].length).fill(DEFAULT_COL_WIDTH);
     rowHeights = state.rowHeights || Array(gridData.length).fill(DEFAULT_ROW_HEIGHT);
     merges = state.merges || [];
@@ -877,6 +973,7 @@ function initGrid(rows, cols, data) {
   }
   if (!colAligns.length || colAligns.length !== c) colAligns = Array(c).fill('l');
   if (!colWidthSpecs.length || colWidthSpecs.length !== c) colWidthSpecs = Array(c).fill('2cm');
+  if (!colInnerAligns.length || colInnerAligns.length !== c) colInnerAligns = Array(c).fill('l');
   document.getElementById('rowCount').value = r;
   document.getElementById('colCount').value = c;
   renderGrid();
@@ -890,6 +987,8 @@ function ensureSizeArrays() {
   colWidths.length = cols;
   while (colWidthSpecs.length < cols) colWidthSpecs.push('2cm');
   colWidthSpecs.length = cols;
+  while (colInnerAligns.length < cols) colInnerAligns.push('l');
+  colInnerAligns.length = cols;
   while (rowHeights.length < rows) rowHeights.push(DEFAULT_ROW_HEIGHT);
   rowHeights.length = rows;
   while (rowHlines.length < rows) rowHlines.push(true);
@@ -926,8 +1025,15 @@ function renderGrid() {
       return `<option value="${a}" ${colAligns[j]===a?'selected':''}>${labels[a]}</option>`;
     }).join('');
     const isPmb = 'pmb'.includes(colAligns[j]);
-    const widthInput = isPmb ? `<input class="th-width" value="${escHtml(colWidthSpecs[j])}" title="Column width" onchange="colWidthSpecs[${j}]=this.value;autoSave()" onclick="event.stopPropagation()">` : '';
-    html += `<th oncontextmenu="showColCtx(event, ${j})"><div class="th-inner"><span class="th-label">${colLetters[j] || j+1}</span><select class="th-align" onchange="colAligns[${j}]=this.value;renderGrid();autoSave()" title="Alignment">${alOpts}</select>${widthInput}</div><button class="del-col" title="Delete column" onclick="pushUndo();delCol(${j})">&#215;</button><div class="col-resize-handle" data-col="${j}" onmousedown="startColResize(event, ${j})"></div></th>`;
+    let pmbExtra = '';
+    if (isPmb) {
+      const iaOpts = ['l','c','r'].map(a => {
+        const labels = {l:'L',c:'C',r:'R'};
+        return `<option value="${a}" ${colInnerAligns[j]===a?'selected':''}>${labels[a]}</option>`;
+      }).join('');
+      pmbExtra = `<input class="th-width" value="${escHtml(colWidthSpecs[j])}" title="Column width" onchange="colWidthSpecs[${j}]=this.value;autoSave()" onclick="event.stopPropagation()"><select class="th-align" onchange="colInnerAligns[${j}]=this.value;renderGrid();autoSave()" title="Text align within column">${iaOpts}</select>`;
+    }
+    html += `<th oncontextmenu="showColCtx(event, ${j})"><div class="th-inner"><span class="th-label">${colLetters[j] || j+1}</span><select class="th-align" onchange="colAligns[${j}]=this.value;renderGrid();autoSave()" title="Alignment">${alOpts}</select>${pmbExtra}</div><button class="del-col" title="Delete column" onclick="pushUndo();delCol(${j})">&#215;</button><div class="col-resize-handle" data-col="${j}" onmousedown="startColResize(event, ${j})"></div></th>`;
   }
   html += '</tr></thead><tbody>';
 
@@ -947,8 +1053,8 @@ function renderGrid() {
         if (m.colspan > 1) classes += ' cell-center';
       }
       if (isBoldRow) classes += ' cell-bold';
-      // Apply column alignment visually
-      const align = colAligns[j];
+      // Apply column alignment visually (for p/m/b use inner align)
+      const align = 'pmb'.includes(colAligns[j]) ? colInnerAligns[j] : colAligns[j];
       if (align === 'c') classes += ' cell-center';
       else if (align === 'r') classes += ' cell-right';
       // Detect LaTeX formatting in cell content
@@ -1334,6 +1440,11 @@ function cellNav(e, el) {
     else { nc++; if (nc >= cols) { nc = 0; nr++; } }
   } else if (e.key === 'Enter') {
     e.preventDefault();
+    // Commit current value and show computed result before moving
+    gridData[r][c] = el.value;
+    if (isFormula(el.value)) {
+      el.value = getDisplayValue(r, c);
+    }
     if (e.shiftKey) nr--; else nr++;
   } else if (e.key === 'ArrowUp') {
     nr--;
@@ -1359,7 +1470,7 @@ function cellNav(e, el) {
 
 // --- ROW / COL OPERATIONS ---
 function addRow() { pushUndo(); const cols = gridData.length > 0 ? gridData[0].length : parseInt(document.getElementById('colCount').value); gridData.push(Array(cols).fill('')); document.getElementById('rowCount').value = gridData.length; renderGrid(); }
-function addCol() { pushUndo(); if (gridData.length === 0) { gridData.push(['']); colAligns.push('l'); colWidthSpecs.push('2cm'); } else { gridData.forEach(row => row.push('')); colAligns.push('l'); colWidthSpecs.push('2cm'); } document.getElementById('colCount').value = gridData[0].length; renderGrid(); renderAlignRow(); }
+function addCol() { pushUndo(); if (gridData.length === 0) { gridData.push(['']); colAligns.push('l'); colWidthSpecs.push('2cm'); colInnerAligns.push('l'); } else { gridData.forEach(row => row.push('')); colAligns.push('l'); colWidthSpecs.push('2cm'); colInnerAligns.push('l'); } document.getElementById('colCount').value = gridData[0].length; renderGrid(); renderAlignRow(); }
 
 function delRow(i) {
   if (gridData.length <= 1) return;
@@ -1380,7 +1491,7 @@ function delCol(j) {
     if (j < m.c) m.c--;
     return m.colspan > 0;
   });
-  gridData.forEach(row => row.splice(j, 1)); colAligns.splice(j, 1); colWidthSpecs.splice(j, 1); colWidths.splice(j, 1);
+  gridData.forEach(row => row.splice(j, 1)); colAligns.splice(j, 1); colWidthSpecs.splice(j, 1); colInnerAligns.splice(j, 1); colWidths.splice(j, 1);
   document.getElementById('colCount').value = gridData[0].length;
   selection = null; renderGrid(); renderAlignRow();
 }
@@ -1394,9 +1505,11 @@ function resizeGrid() {
   const oldData = gridData.map(row => [...row]);
   const oldAligns = [...colAligns];
   const oldWSpecs = [...colWidthSpecs];
+  const oldInnerAligns = [...colInnerAligns];
   colAligns = [];
   colWidthSpecs = [];
-  for (let j = 0; j < c; j++) { colAligns.push(oldAligns[j] || 'l'); colWidthSpecs.push(oldWSpecs[j] || '2cm'); }
+  colInnerAligns = [];
+  for (let j = 0; j < c; j++) { colAligns.push(oldAligns[j] || 'l'); colWidthSpecs.push(oldWSpecs[j] || '2cm'); colInnerAligns.push(oldInnerAligns[j] || 'l'); }
   merges = merges.filter(m => m.r + m.rowspan <= r && m.c + m.colspan <= c);
   initGrid(r, c, oldData);
 }
@@ -1416,37 +1529,117 @@ function importLatex() {
   if (!raw) { showStatus('Nothing to import.', true); return; }
   pushUndo();
   try {
-    const beginMatch = raw.match(/\\begin\{(?:tabular\*?|longtable|array)\}(?:\{[^}]*\})?\s*\{((?:[^}]|\{[^}]*\})*)\}/);
-    if (beginMatch) {
-      const spec = beginMatch[1];
-      colAligns = [];
-      colWidthSpecs = [];
-      let si = 0;
-      while (si < spec.length) {
-        const ch = spec[si];
-        if ('lcr'.includes(ch)) {
-          colAligns.push(ch);
-          colWidthSpecs.push('2cm');
-          si++;
-        } else if ('pmb'.includes(ch)) {
-          // Parse p{width}, m{width}, b{width}
-          colAligns.push(ch);
-          si++;
-          if (spec[si] === '{') {
-            const end = spec.indexOf('}', si);
-            colWidthSpecs.push(spec.substring(si + 1, end));
-            si = end + 1;
+    // Extract column spec using balanced brace matching
+    const beginIdx = raw.search(/\\begin\{(?:tabular\*?|longtable|array)\}/);
+    let spec = '';
+    if (beginIdx >= 0) {
+      // Find the column spec: the last top-level {...} before the table body
+      let pos = raw.indexOf('{', beginIdx); // first { of \begin{tabular}
+      // Skip \begin{env} and optional width arg like {width}
+      let braceCount = 0;
+      while (pos < raw.length) {
+        if (raw[pos] === '{') {
+          if (braceCount === 0) {
+            // Find matching close
+            let depth = 1, start = pos + 1, p = start;
+            while (p < raw.length && depth > 0) {
+              if (raw[p] === '{') depth++;
+              else if (raw[p] === '}') depth--;
+              p++;
+            }
+            spec = raw.substring(start, p - 1);
+            pos = p;
+            braceCount++;
           } else {
-            colWidthSpecs.push('2cm');
+            // This is a subsequent {...} — could be the column spec
+            let depth = 1, start = pos + 1, p = start;
+            while (p < raw.length && depth > 0) {
+              if (raw[p] === '{') depth++;
+              else if (raw[p] === '}') depth--;
+              p++;
+            }
+            spec = raw.substring(start, p - 1);
+            pos = p;
+            break; // column spec is always the last brace group before body
           }
         } else {
-          si++; // skip |, @{}, etc.
+          pos++;
         }
       }
     }
+    if (spec) {
+      colAligns = [];
+      colWidthSpecs = [];
+      colInnerAligns = [];
+      let si = 0;
+      let pendingInnerAlign = null; // from >{\raggedleft...} etc.
+      while (si < spec.length) {
+        const ch = spec[si];
+        if (ch === '|' || ch === ' ') {
+          si++;
+        } else if (ch === '>' || ch === '<' || ch === '@' || ch === '!') {
+          // Directive with braced arg: >{...}, @{...}, etc.
+          si++;
+          if (si < spec.length && spec[si] === '{') {
+            let depth = 1, start = si + 1, p = start;
+            while (p < spec.length && depth > 0) {
+              if (spec[p] === '{') depth++;
+              else if (spec[p] === '}') depth--;
+              p++;
+            }
+            const content = spec.substring(start, p - 1);
+            si = p;
+            // Detect inner alignment from >{}
+            if (ch === '>') {
+              if (/raggedleft|\\arraybackslash.*raggedleft/i.test(content)) pendingInnerAlign = 'r';
+              else if (/centering/i.test(content)) pendingInnerAlign = 'c';
+              else if (/raggedright/i.test(content)) pendingInnerAlign = 'l';
+            }
+          }
+        } else if ('lcr'.includes(ch)) {
+          colAligns.push(ch);
+          colWidthSpecs.push('2cm');
+          colInnerAligns.push(pendingInnerAlign || 'l');
+          pendingInnerAlign = null;
+          si++;
+        } else if ('pmb'.includes(ch)) {
+          colAligns.push(ch);
+          si++;
+          // Parse {width}
+          if (si < spec.length && spec[si] === '{') {
+            let depth = 1, start = si + 1, p = start;
+            while (p < spec.length && depth > 0) {
+              if (spec[p] === '{') depth++;
+              else if (spec[p] === '}') depth--;
+              p++;
+            }
+            colWidthSpecs.push(spec.substring(start, p - 1));
+            si = p;
+          } else {
+            colWidthSpecs.push('2cm');
+          }
+          colInnerAligns.push(pendingInnerAlign || 'l');
+          pendingInnerAlign = null;
+        } else {
+          si++; // skip unknown
+        }
+      }
+    }
+    // Extract body: everything between end of column spec and \end{...}
     let body = raw;
-    const bodyMatch = raw.match(/\\begin\{(?:tabular\*?|longtable|array)\}(?:\{[^}]*\})?\s*\{[^}]*\}([\s\S]*)\\end\{/);
-    if (bodyMatch) body = bodyMatch[1];
+    const endMatch = raw.match(/\\end\{(?:tabular\*?|longtable|array)\}/);
+    if (spec && endMatch) {
+      // Find where spec ends in the raw string — search for the spec then skip past its closing brace
+      const specIdx = raw.indexOf(spec, beginIdx);
+      if (specIdx >= 0) {
+        const bodyStart = specIdx + spec.length + 1; // +1 for closing }
+        body = raw.substring(bodyStart, endMatch.index);
+      }
+    } else if (endMatch) {
+      // Fallback
+      const simpleMatch = raw.match(/\\begin\{[^}]*\}(?:\{[^}]*\})?\s*\{[^}]*\}([\s\S]*?)\\end\{/);
+      if (simpleMatch) body = simpleMatch[1];
+    }
 
     // Detect booktabs
     const isBooktabs = raw.includes('\\toprule') || raw.includes('\\bottomrule');
@@ -1545,19 +1738,26 @@ function exportLatex() {
   const needMultirow = merges.some(m => m.rowspan > 1);
 
   // Build column spec
+  const innerAlignPrefix = {l: '>{\\raggedright\\arraybackslash}', c: '>{\\centering\\arraybackslash}', r: '>{\\raggedleft\\arraybackslash}'};
   const specParts = colAligns.map((a, j) => {
-    if ('pmb'.includes(a)) return `${a}{${colWidthSpecs[j] || '2cm'}}`;
+    if ('pmb'.includes(a)) {
+      const ia = colInnerAligns[j] || 'l';
+      const prefix = ia === 'l' ? '' : innerAlignPrefix[ia];
+      return `${prefix}${a}{${colWidthSpecs[j] || '2cm'}}`;
+    }
     return a;
   });
   let spec;
   if (borders) spec = '|' + specParts.join('|') + '|';
   else spec = specParts.join('');
+  const needArray = colInnerAligns.some((ia, j) => 'pmb'.includes(colAligns[j]) && ia !== 'l');
 
   const rows = gridData.length, cols = gridData[0].length;
   let lines = [];
   if (needMultirow) lines.push('% Requires: \\usepackage{multirow}');
   if (booktabs) lines.push('% Requires: \\usepackage{booktabs}');
   if (altShading) lines.push('% Requires: \\usepackage[table]{xcolor}');
+  if (needArray) lines.push('% Requires: \\usepackage{array}');
   const needSout = gridData.some(row => row.some(cell => /\\sout\{/.test(cell)));
   if (needSout) lines.push('% Requires: \\usepackage[normalem]{ulem}');
   const needXcolor = Object.keys(cellColors).length > 0;
@@ -1963,6 +2163,7 @@ function insertColAt(idx) {
   gridData.forEach(row => row.splice(idx, 0, ''));
   colAligns.splice(idx, 0, 'l');
   colWidthSpecs.splice(idx, 0, '2cm');
+  colInnerAligns.splice(idx, 0, 'l');
   colWidths.splice(idx, 0, DEFAULT_COL_WIDTH);
   merges.forEach(m => { if (m.c >= idx) m.c++; else if (m.c + m.colspan > idx) m.colspan++; });
   selection = null;
@@ -2001,6 +2202,62 @@ if (!loadAutoSave()) {
   initGrid(3, 3);
 }
 </script>
+
+<div class="hints-bar">
+  <details>
+    <summary>Tips &amp; Shortcuts</summary>
+    <div class="hints-grid">
+      <div class="hint-section">
+        <h4>Navigation</h4>
+        <div><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> &mdash; Next / previous cell</div>
+        <div><kbd>Enter</kbd> / <kbd>Shift+Enter</kbd> &mdash; Move down / up</div>
+        <div><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd> &mdash; Arrow key navigation</div>
+        <div><kbd>Ctrl+A</kbd> &mdash; Select all cells</div>
+      </div>
+      <div class="hint-section">
+        <h4>Selection &amp; Editing</h4>
+        <div><kbd>Ctrl+Click</kbd> + drag &mdash; Select cell range</div>
+        <div><kbd>Shift+Click</kbd> &mdash; Extend selection to cell</div>
+        <div><kbd>Ctrl+C</kbd> / <kbd>X</kbd> / <kbd>V</kbd> &mdash; Copy / Cut / Paste selected cells</div>
+        <div><kbd>Delete</kbd> &mdash; Clear selected cells</div>
+        <div><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Shift+Z</kbd> &mdash; Undo / Redo</div>
+      </div>
+      <div class="hint-section">
+        <h4>Formatting</h4>
+        <div><kbd>Ctrl+B</kbd> &mdash; Bold &ensp;(<code>\textbf{}</code>)</div>
+        <div><kbd>Ctrl+I</kbd> &mdash; Italic &ensp;(<code>\textit{}</code>)</div>
+        <div><kbd>Ctrl+U</kbd> &mdash; Underline &ensp;(<code>\underline{}</code>)</div>
+        <div>Toolbar: <b>S</b> strikethrough, <b>TT</b> monospace, <b>Sc</b> small caps</div>
+        <div>Color pickers for text color &amp; cell background</div>
+      </div>
+      <div class="hint-section">
+        <h4>Formulas (type <code>=</code> in a cell)</h4>
+        <div><code>=sum(A1:A10)</code> &mdash; Sum of range</div>
+        <div><code>=avg(A1:A10)</code> &mdash; Average</div>
+        <div><code>=min()</code> <code>=max()</code> <code>=count()</code> <code>=median()</code> <code>=stdev()</code></div>
+        <div><code>=A1+B1*2</code> &mdash; Arithmetic with cell refs</div>
+        <div><code>=2*sum(A1:A5)+10</code> &mdash; Mix functions &amp; math</div>
+        <div><code>=sqrt(A1)</code> <code>=abs()</code> <code>=round()</code> <code>=log()</code> <code>=sin()</code> <code>=A1^2</code></div>
+        <div>Cell refs: <code>A1</code> = col A, row 1. Ranges: <code>A1:C3</code></div>
+      </div>
+      <div class="hint-section">
+        <h4>Context Menu</h4>
+        <div>Right-click row numbers &mdash; Insert/delete rows</div>
+        <div>Right-click column headers &mdash; Insert/delete columns</div>
+        <div>Right-click any cell &mdash; Full context menu</div>
+      </div>
+      <div class="hint-section">
+        <h4>Other Features</h4>
+        <div>Drag column/row borders to resize</div>
+        <div>Per-row <code>\hline</code> checkboxes (left of row numbers)</div>
+        <div>Column types: <code>l c r p{} m{} b{}</code> with inner alignment</div>
+        <div>Paste from Excel/Sheets (tab-separated) auto-detected</div>
+        <div>CSV import/export via buttons in left panel</div>
+        <div>Auto-saved to browser &mdash; survives page reload</div>
+      </div>
+    </div>
+  </details>
+</div>
 
 </body>
 </html>
